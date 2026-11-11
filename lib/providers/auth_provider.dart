@@ -32,6 +32,13 @@ class Account {
 class AuthProvider extends ChangeNotifier {
   static const minPasswordLength = 6; // padrão do Supabase
 
+  /// Início da mensagem devolvida por [signUp] quando a conta foi criada
+  /// mas ainda falta confirmar o e-mail (não é um erro).
+  static const confirmationNoticePrefix = 'Conta criada! Enviamos um link de confirmação para';
+
+  static bool isConfirmationNotice(String message) =>
+      message.startsWith(confirmationNoticePrefix);
+
   final sb.SupabaseClient _client;
   StreamSubscription<sb.AuthState>? _sub;
 
@@ -149,11 +156,28 @@ class AuthProvider extends ChangeNotifier {
         data: {'nome': name.trim()},
       );
       if (res.session == null) {
-        return 'Enviamos um link de confirmação para $email. Confirme e depois entre.';
+        return '$confirmationNoticePrefix $email. Confirme e depois entre.';
       }
       _account = _fromUser(res.user);
       notifyListeners();
       return null;
+    } on sb.AuthException catch (e) {
+      return _friendly(e);
+    } catch (_) {
+      return _networkError;
+    }
+  }
+
+  /// Reenvia o e-mail de confirmação de cadastro (útil se o primeiro
+  /// e-mail não chegou, foi pro spam, ou expirou).
+  Future<String?> resendConfirmationEmail(String identifier) async {
+    final email = _normalizeEmail(identifier);
+    if (email.isEmpty) return 'Informe seu e-mail';
+    if (!_emailRegex.hasMatch(email)) return 'Informe um e-mail válido';
+
+    try {
+      await _client.auth.resend(type: sb.OtpType.signup, email: email);
+      return null; // null = sucesso (e-mail reenviado)
     } on sb.AuthException catch (e) {
       return _friendly(e);
     } catch (_) {

@@ -8,10 +8,9 @@ import '../../widgets/gradient_button.dart';
 /// Tela de cadastro — mesma linguagem visual do login e da recuperação
 /// de senha (fundo com brilhos da paleta + cartão de vidro fosco).
 ///
-/// Ao criar a conta com sucesso, a conta fica salva no aparelho e o
-/// [AccountDataCoordinator] já começa o app do zero para o novo usuário
-/// (perfil Bronze, sem pontos, saldo zerado, sem caixinhas nem chaves
-/// Pix). O AuthGate troca de tela sozinho.
+/// Ao criar a conta com sucesso, o botão "CRIAR CONTA" vira "IR PARA O
+/// INÍCIO". Se o projeto exige confirmação de e-mail, o início é o login;
+/// senão, o AuthGate já mostra a home.
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
@@ -27,7 +26,9 @@ class _SignupScreenState extends State<SignupScreen> {
   final _confirmController = TextEditingController();
   bool _obscurePassword = true;
   bool _loading = false;
+  bool _created = false;
   String? _errorMessage;
+  String? _successMessage;
 
   @override
   void dispose() {
@@ -45,23 +46,24 @@ class _SignupScreenState extends State<SignupScreen> {
       _errorMessage = null;
     });
 
-    // Captura antes do await para não usar o context depois do gap
-    // assíncrono.
-    final authProvider = context.read<AuthProvider>();
-    final navigator = Navigator.of(context);
-
-    final error = await authProvider.signUp(
-      name: _nameController.text,
-      identifier: _identifierController.text,
-      password: _passwordController.text,
-    );
+    final error = await context.read<AuthProvider>().signUp(
+          name: _nameController.text,
+          identifier: _identifierController.text,
+          password: _passwordController.text,
+        );
 
     if (!mounted) return;
 
-    if (error == null) {
-      // Fecha a tela de cadastro (e o login, se estiver empilhado) para
-      // revelar o AuthGate, que já mostra a home por causa do isLoggedIn.
-      navigator.popUntil((route) => route.isFirst);
+    // Conta criada: a tela troca o botão "CRIAR CONTA" por "IR PARA O
+    // INÍCIO" em vez de sair sozinha. Com confirmação de e-mail ligada
+    // o servidor devolve um aviso (não um erro) e o usuário só entra
+    // depois de confirmar.
+    if (error == null || AuthProvider.isConfirmationNotice(error)) {
+      setState(() {
+        _loading = false;
+        _created = true;
+        _successMessage = error ?? 'Conta criada com sucesso!';
+      });
       return;
     }
 
@@ -69,6 +71,12 @@ class _SignupScreenState extends State<SignupScreen> {
       _loading = false;
       _errorMessage = error;
     });
+  }
+
+  /// Fecha a tela de cadastro (e o login, se estiver empilhado) para
+  /// revelar o AuthGate: a home, se já houver sessão, ou o login.
+  void _goHome() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
@@ -131,6 +139,19 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _buildForm() {
+    if (_created) {
+      // Depois de criar, só resta voltar para o início.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AuthSuccessBanner(message: _successMessage!),
+          const SizedBox(height: 18),
+          GradientButton(label: 'IR PARA O INÍCIO', onTap: _goHome),
+        ],
+      );
+    }
+
     return Form(
       key: _formKey,
       child: Column(

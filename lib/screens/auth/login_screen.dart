@@ -24,7 +24,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _loading = false;
+  bool _resending = false;
   String? _errorMessage;
+
+  bool get _showResendConfirmation =>
+      _errorMessage == 'Confirme seu e-mail antes de entrar';
 
   @override
   void dispose() {
@@ -52,6 +56,25 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     // Em caso de sucesso, o AuthGate reage sozinho (via Provider) e
     // troca a tela — não precisa navegar manualmente daqui.
+  }
+
+  Future<void> _resendConfirmation() async {
+    setState(() => _resending = true);
+
+    final error = await context
+        .read<AuthProvider>()
+        .resendConfirmationEmail(_loginController.text);
+
+    if (!mounted) return;
+    setState(() => _resending = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error ?? 'E-mail de confirmação reenviado. Confira sua caixa de entrada (e o spam).',
+        ),
+      ),
+    );
   }
 
   void _toggleObscurePassword() {
@@ -101,8 +124,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   obscurePassword: _obscurePassword,
                   loading: _loading,
                   errorMessage: _errorMessage,
+                  showResendConfirmation: _showResendConfirmation,
+                  resending: _resending,
                   onToggleObscurePassword: _toggleObscurePassword,
                   onSubmit: _submit,
+                  onResendConfirmation: _resendConfirmation,
                   onForgotPassword: _goToForgotPassword,
                   onGoToSignup: _goToSignup,
                 ),
@@ -170,8 +196,11 @@ class _AccessSheet extends StatelessWidget {
   final bool obscurePassword;
   final bool loading;
   final String? errorMessage;
+  final bool showResendConfirmation;
+  final bool resending;
   final VoidCallback onToggleObscurePassword;
   final VoidCallback onSubmit;
+  final VoidCallback onResendConfirmation;
   final VoidCallback onForgotPassword;
   final VoidCallback onGoToSignup;
 
@@ -182,8 +211,11 @@ class _AccessSheet extends StatelessWidget {
     required this.obscurePassword,
     required this.loading,
     required this.errorMessage,
+    required this.showResendConfirmation,
+    required this.resending,
     required this.onToggleObscurePassword,
     required this.onSubmit,
+    required this.onResendConfirmation,
     required this.onForgotPassword,
     required this.onGoToSignup,
   });
@@ -279,6 +311,30 @@ class _AccessSheet extends StatelessWidget {
                   const SizedBox(height: 6),
                   if (errorMessage != null) ...[
                     AuthErrorBanner(message: errorMessage!),
+                    if (showResendConfirmation) ...[
+                      const SizedBox(height: 6),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: resending ? null : onResendConfirmation,
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.accentLight,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            resending
+                                ? 'Reenviando...'
+                                : 'Reenviar e-mail de confirmação',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                   ],
                   GradientButton(
