@@ -64,7 +64,7 @@ Definido em `models/user_tier.dart` (`enum UserTier` + extension com as regras d
 **Pré-requisitos:** Flutter com Dart `>=3.3.0` (Flutter 3.19 ou superior).
 
 ```bash
-git clone https://github.com/camposdevs/S3_Bank_flutter.git
+git clone https://github.com/CauaBorges438/S3Bank.git
 cd S3_Bank_flutter
 flutter pub get
 flutter run
@@ -202,4 +202,15 @@ Quando tiver prints do app, adicione aqui uma seção "Telas" com uma tabela de 
 -->
 
 ---
+
+## Integrantes
+
+- Denise Gonçalves
+- Cauã Borges
+- Pedro Campo
+
+## Turma
+- 4DS
+
+
 
