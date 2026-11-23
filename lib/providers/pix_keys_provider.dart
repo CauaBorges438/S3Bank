@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../services/ledger_repository.dart';
+
 enum PixKeyType { cpf, email, phone, random }
 
 final _emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
@@ -171,6 +173,20 @@ class PixKeysProvider extends ChangeNotifier {
 
   PixKeysProvider() : _keys = _seedKeys();
 
+  LedgerRepository? _ledger;
+  String? _syncError;
+
+  /// Liga as chaves ao banco. Sem isso, usa os dados locais.
+  void attachLedger(LedgerRepository ledger) {
+    _ledger = ledger;
+    // Sem chaves de exemplo no modo banco. Antes, elas bloqueavam o cadastro
+    // com "Chave já cadastrada" mesmo sem existir no banco.
+    _keys.clear();
+  }
+
+  bool get isServerBacked => _ledger != null;
+  String? get syncError => _syncError;
+
   List<PixKey> get keys => List.unmodifiable(_keys);
 
   /// Chave usada por padrão para gerar cobranças (a primeira cadastrada).
@@ -230,17 +246,84 @@ class PixKeysProvider extends ChangeNotifier {
 
   /// Remove as chaves de exemplo para um cadastro novo.
   void resetForNewAccount() {
+    if (_ledger != null) return; // no modo banco, vem do servidor
     _keys.clear();
     notifyListeners();
   }
 
+  /// Esvazia as chaves quando alguém sai.
+  void clearSession() {
+    _keys.clear();
+    notifyListeners();
+  }
+
+  /// Busca as chaves do banco. Sem efeito no modo local.
+  Future<void> refreshFromServer() async {
+    final ledger = _ledger;
+    if (ledger == null) return;
+    try {
+      final rows = await ledger.fetchPixKeys();
+      _keys
+        ..clear()
+        ..addAll(rows.map(_keyFromRow));
+      _syncError = null;
+    } on LedgerException catch (e) {
+      _syncError = e.message;
+    } catch (_) {
+      _syncError = 'Não foi possível atualizar as chaves Pix';
+    }
+    notifyListeners();
+  }
+
+  /// Cadastra uma chave no banco. Retorna null em sucesso ou a mensagem de erro.
+  Future<String?> addKeyRemote({required PixKeyType type, required String value}) async {
+    final ledger = _ledger;
+    if (ledger == null) return 'Indisponível no momento';
+    final error = validateInput(type, value);
+    if (error != null) return error;
+    try {
+      await ledger.insertPixKey(keyType: type.name, keyValue: type.normalize(value)!);
+      await refreshFromServer();
+      return null;
+    } on LedgerException catch (e) {
+      return e.message;
+    }
+  }
+
+  /// Chave aleatória gerada aqui e cadastrada no banco.
+  Future<String?> addRandomKeyRemote() =>
+      addKeyRemote(type: PixKeyType.random, value: _generateUuidV4());
+
+  Future<String?> removeKeyRemote(String id) async {
+    final ledger = _ledger;
+    if (ledger == null) return 'Indisponível no momento';
+    try {
+      await ledger.deletePixKey(id);
+      await refreshFromServer();
+      return null;
+    } on LedgerException catch (e) {
+      return e.message;
+    }
+  }
+
   void removeKey(String id) {
+    if (_ledger != null) {
+      // No modo banco, a remoção é feita no servidor. Erros ficam em syncError.
+      removeKeyRemote(id);
+      return;
+    }
     _keys.removeWhere((k) => k.id == id);
     notifyListeners();
   }
 
-  /// Valor de uma nova chave aleatória (UUID v4).
-  static String newRandomKeyValue() => _generateUuidV4();
+  static PixKey _keyFromRow(Map<String, dynamic> row) => PixKey(
+        id: row['id'] as String,
+        type: PixKeyType.values.firstWhere(
+          (t) => t.name == row['key_type'],
+          orElse: () => PixKeyType.random,
+        ),
+        value: row['key_value'] as String,
+      );
 
   static String _generateUuidV4() {
     final rnd = Random.secure();

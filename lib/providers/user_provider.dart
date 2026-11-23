@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_tier.dart';
+import '../services/ledger_repository.dart';
 
 /// Gerencia o perfil do usuário e a lógica de progressão de nível.
 ///
@@ -21,6 +22,58 @@ class UserProvider extends ChangeNotifier {
     int initialPoints = 120,
   })  : _tier = initialTier,
         _consistencyPoints = initialPoints;
+
+  LedgerRepository? _ledger;
+  int _streakMonths = 0;
+  String? _syncError;
+
+  /// Liga o progresso ao banco. Nesse modo, nível e pontos vêm do servidor
+  /// e o aparelho não calcula nada.
+  void attachLedger(LedgerRepository ledger) {
+    _ledger = ledger;
+    _tier = UserTier.bronze;
+    _consistencyPoints = 0;
+    _streakMonths = 0;
+  }
+
+  bool get isServerBacked => _ledger != null;
+  int get streakMonths => _streakMonths;
+  String? get syncError => _syncError;
+
+  /// Busca nível, pontos e constância no servidor. Sem efeito no modo local.
+  Future<void> refreshFromServer() async {
+    final ledger = _ledger;
+    if (ledger == null) return;
+    try {
+      final row = await ledger.fetchProgress();
+      if (row == null) {
+        _tier = UserTier.bronze;
+        _consistencyPoints = 0;
+        _streakMonths = 0;
+      } else {
+        _tier = UserTier.values.firstWhere(
+          (t) => t.name == row['tier'],
+          orElse: () => UserTier.bronze,
+        );
+        _consistencyPoints = (row['points'] as num?)?.toInt() ?? 0;
+        _streakMonths = (row['streak_months'] as num?)?.toInt() ?? 0;
+      }
+      _syncError = null;
+    } on LedgerException catch (e) {
+      _syncError = e.message;
+    } catch (_) {
+      _syncError = 'Não foi possível atualizar o progresso';
+    }
+    notifyListeners();
+  }
+
+  /// Zera o progresso exibido quando alguém sai.
+  void clearSession() {
+    _tier = UserTier.bronze;
+    _consistencyPoints = 0;
+    _streakMonths = 0;
+    notifyListeners();
+  }
 
   UserTier get tier => _tier;
   int get consistencyPoints => _consistencyPoints;
@@ -94,6 +147,8 @@ class UserProvider extends ChangeNotifier {
   /// apenas volume) — aqui simplificado como pontos fixos por aporte
   /// somados a uma fração do valor.
   void registerDeposit(double amount) {
+    // No modo banco, os pontos são calculados pelo servidor (0004).
+    if (_ledger != null) return;
     final gainedPoints = 15 + (amount / 10).floor();
     _consistencyPoints += gainedPoints;
     _tryLevelUp();

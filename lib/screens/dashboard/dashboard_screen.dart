@@ -1,20 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../animations/animations.dart';
 import '../../core/theme/app_colors.dart';
-import '../../providers/card_provider.dart';
+import '../../models/user_tier.dart';
 import '../../providers/savings_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../widgets/balance_card.dart';
 import '../../widgets/level_progress_bar.dart';
 import '../../widgets/quick_access_button.dart';
 import '../../widgets/tier_badge.dart';
 import '../../widgets/transaction_tile.dart';
-import '../card/card_screen.dart';
-import '../pix/pix_screen.dart';
-import '../savings/savings_screen.dart';
+import '../profile/profile_screen.dart';
+import '../statement/statement_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   final void Function(int tabIndex) onNavigateToTab;
@@ -27,132 +25,144 @@ class DashboardScreen extends StatelessWidget {
     final wallet = context.watch<WalletProvider>();
     final savings = context.watch<SavingsProvider>();
 
-    // Mantém o cartão sincronizado com o nível atual do usuário.
-    context.read<CardProvider>().syncTier(user.tier);
+    // O cartão acompanha o nível do usuário via AccountDataCoordinator
+    // (antes isso era chamado aqui, dentro do build, o que notificava
+    // ouvintes durante a construção da tela).
 
-    final currencyFmt = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-
-    return SafeArea(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+    // Número fixo de blocos: o índice de cada um define o atraso da
+    // animação de entrada (efeito cascata).
+    final blocks = <Widget>[
+      _Header(userName: user.name, tier: user.tier),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: LevelProgressBar(
+          currentTier: user.tier,
+          nextTier: user.nextTier,
+          progress: user.progressToNextTier,
+          pointsRemaining: user.pointsRemainingForNext,
+        ),
+      ),
+      BalanceCard(
+        balance: wallet.balance,
+        visible: wallet.balanceVisible,
+        onToggleVisibility: () => wallet.toggleBalanceVisibility(),
+      ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Header(userName: user.name, tier: user.tier),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: LevelProgressBar(
-              currentTier: user.tier,
-              nextTier: user.nextTier,
-              progress: user.progressToNextTier,
-              pointsRemaining: user.pointsRemainingForNext,
-            ),
-          ),
-          const SizedBox(height: 20),
-          BalanceCard(
-            balance: wallet.balance,
-            visible: wallet.balanceVisible,
-            onToggleVisibility: () => wallet.toggleBalanceVisibility(),
-          ),
-          const SizedBox(height: 20),
           const Text(
             'Acesso rápido',
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
           ),
           const SizedBox(height: 12),
+          // Os atalhos trocam de aba (em vez de empilhar uma segunda cópia
+          // da tela por cima, sem a barra de navegação).
           Row(
             children: [
               Expanded(
-                child: QuickAccessButton(
-                  icon: Icons.qr_code,
-                  iconSize: 26,
-                  label: 'Área Pix',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PixScreen()),
+                child: TapScale(
+                  child: QuickAccessButton(
+                    icon: Icons.qr_code,
+                    iconSize: 26,
+                    label: 'Área Pix',
+                    onTap: () => onNavigateToTab(1),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: QuickAccessButton(
-                  icon: Icons.savings_outlined,
-                  label: 'Guardar\nDinheiro',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SavingsScreen()),
+                child: TapScale(
+                  child: QuickAccessButton(
+                    icon: Icons.savings_outlined,
+                    label: 'Guardar\nDinheiro',
+                    onTap: () => onNavigateToTab(2),
                   ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: QuickAccessButton(
-                  icon: Icons.credit_card,
-                  label: 'Cartão\nDigital',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const CardScreen()),
+                child: TapScale(
+                  child: QuickAccessButton(
+                    icon: Icons.credit_card,
+                    label: 'Cartão\nDigital',
+                    onTap: () => onNavigateToTab(3),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: AppColors.accentGradient,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Total guardado',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        currencyFmt.format(savings.totalSaved),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+        ],
+      ),
+      Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: AppColors.accentGradient,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Total guardado',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
                   ),
-                ),
-                Container(width: 1, height: 36, color: Colors.white24),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Rendimento do mês',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: AnimatedCounter(
+                      value: savings.totalSaved,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '+ ${currencyFmt.format(savings.monthlyYieldEstimate(user.tier))}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
+            Container(width: 1, height: 36, color: Colors.white24),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rendimento do mês',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: AnimatedCounter(
+                      value: savings.monthlyYieldEstimate(user.tier),
+                      prefix: '+ R\$ ',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -160,8 +170,10 @@ class DashboardScreen extends StatelessWidget {
                 'Últimas movimentações',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
               ),
+              // "Ver tudo" abre o extrato completo (a aba Pix só mostra Pix).
               TextButton(
-                onPressed: () => onNavigateToTab(1),
+                onPressed: () => Navigator.of(context)
+                    .push(fadeSlideRoute(const StatementScreen())),
                 child: const Text('Ver tudo'),
               ),
             ],
@@ -178,8 +190,20 @@ class DashboardScreen extends StatelessWidget {
             ),
           ...wallet.transactions
               .take(3)
-              .map((t) => TransactionTile(transaction: t)),
+              .map((t) => TransactionTile(key: ValueKey(t.id), transaction: t)),
         ],
+      ),
+    ];
+
+    return SafeArea(
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        itemCount: blocks.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 22),
+        itemBuilder: (context, i) => FadeSlideIn(
+          delay: Duration(milliseconds: 70 * i),
+          child: blocks[i],
+        ),
       ),
     );
   }
@@ -187,7 +211,7 @@ class DashboardScreen extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final String userName;
-  final dynamic tier;
+  final UserTier tier;
 
   const _Header({required this.userName, required this.tier});
 
@@ -195,12 +219,26 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        CircleAvatar(
-          radius: 24,
-          backgroundColor: AppColors.surfaceElevated,
-          child: Text(
-            userName.isNotEmpty ? userName[0].toUpperCase() : '?',
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        // Toque no avatar abre o perfil (a tela existia, mas não era
+        // acessível por lugar nenhum).
+        TapScale(
+          onTap: () => Navigator.of(context)
+              .push(fadeSlideRoute(const ProfileScreen())),
+          child: Hero(
+            tag: 'profile-avatar',
+            // Material transparente: evita o texto "sublinhado amarelo"
+            // durante a animação do Hero.
+            child: Material(
+              type: MaterialType.transparency,
+              child: CircleAvatar(
+                radius: 24,
+                backgroundColor: AppColors.surfaceElevated,
+                child: Text(
+                  userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -214,20 +252,14 @@ class _Header extends StatelessWidget {
               ),
               Text(
                 userName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
               ),
             ],
           ),
         ),
         TierBadge(tier: tier, large: true),
-        const SizedBox(width: 4),
-        Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.logout, color: AppColors.textSecondary, size: 20),
-            tooltip: 'Sair',
-            onPressed: () => context.read<AuthProvider>().signOut(),
-          ),
-        ),
       ],
     );
   }

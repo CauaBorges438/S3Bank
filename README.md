@@ -18,9 +18,9 @@
 
 Um app bancário onde **quanto mais constante você é, mais seu dinheiro rende**.
 A cada aporte em "Guardar Dinheiro" você ganha pontos de constância, sobe de nível
-e desbloqueia um percentual maior do CDI, com um cartão digital que muda de visual junto com você.
+e desbloqueia um percentual maior do CDI, com um cartão digital que muda de visual junto com você e um cartão de crédito virtual com limite, compras e fatura.
 
-Os dados ficam no **Supabase** (Postgres + Auth + RLS): contas, saldo, extrato, caixinhas, chaves Pix e cartão são lidos e gravados no servidor, e toda movimentação de dinheiro passa por funções do banco.
+Os dados ficam no **Supabase** (Postgres + Auth + RLS): contas, saldo, extrato, caixinhas, chaves Pix e cartões são lidos e gravados no servidor, e toda movimentação de dinheiro passa por funções do banco.
 
 </div>
 
@@ -35,6 +35,7 @@ Os dados ficam no **Supabase** (Postgres + Auth + RLS): contas, saldo, extrato, 
 | **Pix** | Pagar, receber (QR Code + Pix Copia e Cola no padrão BR Code com CRC16) e gerenciar chaves |
 | **Guardar Dinheiro** | Caixinhas com metas, aportes, resgates e rendimento calculado sobre o CDI do nível |
 | **Cartão digital** | Cartão com visual do nível, dados mascarados e opção de bloquear |
+| **Cartão de crédito** | Cartão virtual (número, validade e CVV aparecem só na criação), limite disponível, registro de compras por categoria, fatura do mês com vencimento e pagamento da fatura com PIN de transação. É demonstrativo: não há integração com bandeira ou emissor |
 | **Perfil** | Nome, nível e saída da conta |
 
 ---
@@ -93,11 +94,11 @@ lib/
 ├── core/
 │   ├── theme/                    # AppColors e ThemeData (Material 3, dark)
 │   └── pix_payload_generator.dart # BR Code do Pix (EMV + CRC16)
-├── models/                       # UserTier, Transaction, SavingsGoal, CardModel
+├── models/                       # UserTier, Transaction, SavingsGoal, CardModel, CardSummary
 ├── services/                     # Supabase: config, BankService (tabelas e funções do banco),
 │                                 # BankActions e AccountDataCoordinator (carrega/limpa os
 │                                 # providers ao entrar/sair da conta)
-├── providers/                    # Auth, User, Wallet, Savings, PixKeys, Card
+├── providers/                    # Auth, User, Wallet, Savings, PixKeys, Card, CreditCard
 ├── widgets/                      # cartão, saldo, badges, botão com gradiente,
 │                                 # fundo e campos das telas de acesso...
 ├── screens/
@@ -105,7 +106,7 @@ lib/
 │   ├── dashboard/                # início
 │   ├── pix/                      # área Pix
 │   ├── savings/                  # guardar dinheiro
-│   ├── card/                     # cartão digital
+│   ├── card/                     # cartão digital e cartão de crédito
 │   ├── profile/                  # perfil
 │   ├── auth_gate.dart            # alterna login ↔ app conforme a sessão
 │   ├── splash_screen.dart
@@ -131,6 +132,7 @@ Os testes cobrem as regras que não podem quebrar sem ninguém perceber:
 | `wallet_provider_test.dart` | Envio e recebimento de Pix, saldo insuficiente, valores inválidos, arredondamento de centavos |
 | `savings_and_pix_keys_test.dart` | Rendimento por nível, caixinhas, validação de CPF/e-mail/celular/chave aleatória |
 | `currency_input_formatter_test.dart` | Máscara de valores em reais nos campos de dinheiro |
+| `card_format_test.dart` | Número do cartão mascarado, nome dos meses da fatura, leitura do resumo (limite, uso, vencimento) e compra paga |
 
 Login, cadastro e as funções do banco dependem do servidor e são verificados manualmente no app.
 
@@ -147,6 +149,7 @@ O app usa o projeto Supabase "S3 Bank", que já tem as tabelas `perfis`, `cartei
 - **Leitura:** o app lê as tabelas direto.
 - **Movimentação de dinheiro:** só pelas funções do banco `enviar_pix`, `receber_pix`, `depositar_caixinha` e `resgatar_caixinha`. Elas validam o saldo e atualizam carteira, extrato, pontos e nível numa única transação.
 - **Caixinhas e chaves Pix:** `insert` direto (e `delete` nas chaves), liberado pelas políticas.
+- **Cartão de crédito:** pelas funções `create_virtual_card`, `get_card_summary`, `make_card_purchase` e `pay_card_invoice_pin` (o pagamento da fatura exige a autorização do PIN de transação). As compras ficam na tabela `card_purchases`.
 
 Para o código de recuperação de senha chegar por e-mail, o template **Authentication → Email Templates → Reset Password** precisa conter `{{ .Token }}`. O cadastro usa confirmação de e-mail; para entrar logo após criar a conta (útil em testes), desligue "Confirm email" em Authentication → Sign In / Providers → Email.
 
@@ -174,6 +177,7 @@ Ao entrar numa conta, o `AccountDataCoordinator` busca tudo no servidor e entreg
 | `SavingsProvider` | Caixinhas (`caixinhas`); aporte e resgate por `depositar_caixinha` / `resgatar_caixinha` |
 | `PixKeysProvider` | Chaves Pix (`chaves_pix`) |
 | `CardProvider` | Dados do cartão (`cartoes`), criado no cadastro pelo trigger `handle_new_user` |
+| `CreditCardProvider` | Limite, fatura e compras do cartão de crédito (`get_card_summary`, `card_purchases`); criação, compra e pagamento por funções do banco. Vive só enquanto a tela de cartões está aberta |
 | `PixPayloadGenerator` | QR Code estático; cobranças dinâmicas exigem um PSP autorizado pelo Banco Central |
 
 > **Aviso sobre o Pix:** o QR Code gerado é estático e estruturalmente válido.
@@ -191,6 +195,7 @@ Ao entrar numa conta, o `AccountDataCoordinator` busca tudo no servidor e entreg
 - [x] Camada de serviços entre providers e backend (`BankService`, `AccountDataCoordinator`)
 - [x] Movimentação de dinheiro por funções do banco (saldo validado no servidor)
 - [ ] Dados do cartão protegidos (hoje número e CVV ficam em texto no banco; discutir no TCC)
+- [x] Cartão de crédito virtual com limite, compras, fatura e pagamento com PIN
 - [x] Testes automatizados e CI no GitHub Actions
 - [ ] Telas de Dados pessoais, Segurança e Ajuda no perfil
 
@@ -211,6 +216,3 @@ Quando tiver prints do app, adicione aqui uma seção "Telas" com uma tabela de 
 
 ## Turma
 - 4DS
-
-
-

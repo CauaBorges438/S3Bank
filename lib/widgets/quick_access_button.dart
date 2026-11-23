@@ -38,7 +38,7 @@ class QuickAccessButton extends StatelessWidget {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.loginBlueMid.withOpacity(0.35),
+                    color: AppColors.loginBlueMid.withValues(alpha: 0.35),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),

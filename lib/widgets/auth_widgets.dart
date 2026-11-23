@@ -57,8 +57,8 @@ class _Glow extends StatelessWidget {
         shape: BoxShape.circle,
         gradient: RadialGradient(
           colors: [
-            color.withOpacity(opacity),
-            color.withOpacity(0),
+            color.withValues(alpha: opacity),
+            color.withValues(alpha: 0),
           ],
         ),
       ),
@@ -83,9 +83,9 @@ class AuthGlassCard extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 20),
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            color: AppColors.surface.withOpacity(0.82),
+            color: AppColors.surface.withValues(alpha: 0.82),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: child,
         ),
@@ -160,33 +160,6 @@ class AuthTextField extends StatelessWidget {
 }
 
 /// Faixa de erro exibida acima do botão principal.
-/// Aviso de sucesso (verde), no mesmo formato do [AuthErrorBanner].
-class AuthSuccessBanner extends StatelessWidget {
-  final String message;
-
-  const AuthSuccessBanner({super.key, required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.success.withOpacity(0.14),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        message,
-        style: const TextStyle(
-          color: AppColors.success,
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
 class AuthErrorBanner extends StatelessWidget {
   final String message;
 
@@ -198,7 +171,7 @@ class AuthErrorBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.danger.withOpacity(0.14),
+        color: AppColors.danger.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(

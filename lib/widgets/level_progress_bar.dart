@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../animations/animations.dart';
 import '../core/theme/app_colors.dart';
 import '../models/user_tier.dart';
 
@@ -67,29 +68,7 @@ class LevelProgressBar extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: Stack(
-            children: [
-              Container(height: 12, color: AppColors.surfaceElevated),
-              FractionallySizedBox(
-                widthFactor: progress.clamp(0.0, 1.0),
-                child: Container(
-                  height: 12,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.loginGradient,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.loginBlueMid.withOpacity(0.5),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        AnimatedProgressBar(progress: progress, height: 12, glow: true),
         const SizedBox(height: 6),
         Align(
           alignment: Alignment.centerRight,

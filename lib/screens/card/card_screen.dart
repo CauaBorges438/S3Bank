@@ -1,131 +1,145 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+import '../../animations/animations.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/card_provider.dart';
+import '../../providers/credit_card_provider.dart';
+import '../../services/ledger_repository.dart';
 import '../../widgets/digital_card_widget.dart';
+import 'credit_card_screen.dart';
 
-class CardScreen extends StatefulWidget {
+/// Meus cartões: débito e crédito na mesma tela.
+class CardScreen extends StatelessWidget {
   const CardScreen({super.key});
 
   @override
-  State<CardScreen> createState() => _CardScreenState();
-}
-
-class _CardScreenState extends State<CardScreen> {
-  bool _showDetails = false;
-
-  @override
   Widget build(BuildContext context) {
-    final cardProvider = context.watch<CardProvider>();
-    final card = cardProvider.card;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Cartão Digital')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-          children: [
-            DigitalCardWidget(card: card, showDetails: _showDetails),
-            const SizedBox(height: 16),
-            Center(
-              child: OutlinedButton.icon(
-                onPressed: () => setState(() => _showDetails = !_showDetails),
-                icon: Icon(
-                  _showDetails ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                  size: 17,
-                  color: AppColors.accentLight,
-                ),
-                label: Text(
-                  _showDetails ? 'Ocultar dados' : 'Mostrar dados',
-                  style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600),
-                ),
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: AppColors.surfaceElevated,
-                  side: BorderSide(color: AppColors.border),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  children: [
-                    // Faixa fina com o gradiente da marca — mesma
-                    // assinatura visual usada no site.
-                    Container(height: 3, decoration: const BoxDecoration(gradient: AppColors.loginGradient)),
-                    _CopyRow(
-                      label: 'Número do cartão',
-                      value: card.groupedNumber,
-                      onCopy: () => _copyToClipboard(context, card.groupedNumber, 'Número'),
-                    ),
-                    const Divider(height: 1, color: AppColors.border),
-                    _CopyRow(
-                      label: 'Validade',
-                      value: card.expiry,
-                      onCopy: () => _copyToClipboard(context, card.expiry, 'Validade'),
-                    ),
-                    const Divider(height: 1, color: AppColors.border),
-                    _CopyRow(
-                      label: 'CVV',
-                      value: card.cvv,
-                      onCopy: () => _copyToClipboard(context, card.cvv, 'CVV'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.loginGradient,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.info_outline, color: Colors.white, size: 15),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 4),
-                      child: Text(
-                        'Função: Apenas Débito. O visual do cartão é atualizado automaticamente conforme seu nível de rendimento evolui.',
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.4),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return ChangeNotifierProvider(
+      create: (_) => CreditCardProvider(LedgerRepository())..refresh(),
+      child: const _CardsView(),
     );
   }
+}
 
-  void _copyToClipboard(BuildContext context, String value, String label) {
+class _CardsView extends StatefulWidget {
+  const _CardsView();
+
+  @override
+  State<_CardsView> createState() => _CardsViewState();
+}
+
+class _CardsViewState extends State<_CardsView> {
+  bool _showDetails = false;
+
+  void _copy(BuildContext context, String value, String label) {
     Clipboard.setData(ClipboardData(text: value.replaceAll(' ', '')));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$label copiado.')),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final card = context.watch<CardProvider>().card;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Meus cartões')),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () => context.read<CreditCardProvider>().refresh(),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+            children: [
+              const _SectionLabel('Débito'),
+              const SizedBox(height: 10),
+              DigitalCardWidget(card: card, showDetails: _showDetails),
+              const SizedBox(height: 12),
+              Center(
+                child: TapScale(
+                  child: OutlinedButton.icon(
+                    onPressed: () => setState(() => _showDetails = !_showDetails),
+                    icon: Icon(
+                      _showDetails ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                      size: 17,
+                      color: AppColors.accentLight,
+                    ),
+                    label: Text(
+                      _showDetails ? 'Ocultar dados' : 'Mostrar dados',
+                      style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: AppColors.surfaceElevated,
+                      side: const BorderSide(color: AppColors.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 3,
+                        decoration: const BoxDecoration(gradient: AppColors.loginGradient),
+                      ),
+                      _CopyRow(
+                        label: 'Número do cartão',
+                        value: _showDetails ? card.groupedNumber : card.maskedNumber,
+                        onCopy: () => _copy(context, card.groupedNumber, 'Número'),
+                      ),
+                      const Divider(height: 1, color: AppColors.border),
+                      _CopyRow(
+                        label: 'Validade',
+                        value: _showDetails ? card.expiry : '••/••',
+                        onCopy: () => _copy(context, card.expiry, 'Validade'),
+                      ),
+                      const Divider(height: 1, color: AppColors.border),
+                      _CopyRow(
+                        label: 'CVV',
+                        value: _showDetails ? card.cvv : '•••',
+                        onCopy: () => _copy(context, card.cvv, 'CVV'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 30),
+              const _SectionLabel('Crédito'),
+              const SizedBox(height: 10),
+              CreditCardSection(revealed: _showDetails),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      );
 }
 
 class _CopyRow extends StatelessWidget {

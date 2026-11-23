@@ -13,17 +13,6 @@ const List<IconData> savingsIconOptions = [
   Icons.school_outlined,
 ];
 
-/// Nomes dos ícones como ficam na coluna `caixinhas.nome_icone` do banco
-/// (mesma ordem de [savingsIconOptions]).
-const List<String> savingsIconNames = [
-  'savings_outlined',
-  'flight_takeoff',
-  'shield_outlined',
-  'directions_car_outlined',
-  'home_outlined',
-  'school_outlined',
-];
-
 /// Representa uma "caixinha" / objetivo de economia criado pelo usuário,
 /// inspirado no "Guardar Dinheiro" do Itaú e nas "Caixinhas" do C6 Bank.
 class SavingsGoal {

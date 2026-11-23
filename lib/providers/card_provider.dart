@@ -22,23 +22,6 @@ class CardProvider extends ChangeNotifier {
 
   CardModel get card => _card;
 
-  /// Aplica os dados reais do cartão vindos do servidor (mantém o nível).
-  void applyDetails({
-    required String holderName,
-    required String cardNumber,
-    required String expiry,
-    required String cvv,
-  }) {
-    _card = CardModel(
-      holderName: holderName,
-      cardNumber: cardNumber,
-      expiry: expiry,
-      cvv: cvv,
-      tier: _card.tier,
-    );
-    notifyListeners();
-  }
-
   /// Chamado quando o usuário sobe (ou, em tese, desce) de nível, para que
   /// o cartão digital atualize sua cor/skin automaticamente.
   void syncTier(UserTier tier) {

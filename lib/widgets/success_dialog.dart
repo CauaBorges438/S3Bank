@@ -21,14 +21,21 @@ Future<void> showSuccessDialog(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: const BoxDecoration(
-                  gradient: AppColors.loginGradient,
-                  shape: BoxShape.circle,
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: 1),
+                duration: const Duration(milliseconds: 650),
+                curve: Curves.elasticOut,
+                builder: (context, scale, child) =>
+                    Transform.scale(scale: scale, child: child),
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    gradient: AppColors.loginGradient,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 32),
                 ),
-                child: const Icon(Icons.check, color: Colors.white, size: 32),
               ),
               const SizedBox(height: 20),
               Text(

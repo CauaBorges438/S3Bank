@@ -8,6 +8,9 @@ class Transaction {
   final double amount;
   final DateTime date;
 
+  /// Chave de categoria (ex.: 'alimentacao'), ou null se não categorizada.
+  final String? category;
+
   const Transaction({
     required this.id,
     required this.type,
@@ -15,7 +18,18 @@ class Transaction {
     required this.subtitle,
     required this.amount,
     required this.date,
+    this.category,
   });
+
+  Transaction copyWith({String? category}) => Transaction(
+        id: id,
+        type: type,
+        title: title,
+        subtitle: subtitle,
+        amount: amount,
+        date: date,
+        category: category ?? this.category,
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -24,6 +38,7 @@ class Transaction {
         'subtitle': subtitle,
         'amount': amount,
         'date': date.toIso8601String(),
+        'category': category,
       };
 
   factory Transaction.fromJson(Map<String, dynamic> json) => Transaction(
@@ -36,6 +51,7 @@ class Transaction {
         subtitle: json['subtitle'] as String? ?? '',
         amount: (json['amount'] as num?)?.toDouble() ?? 0,
         date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
+        category: json['category'] as String?,
       );
 
   /// Indica se o valor deve ser exibido como entrada (verde) ou saída (padrão).

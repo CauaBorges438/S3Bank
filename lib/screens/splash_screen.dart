@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
+import '../animations/animations.dart';
 import '../core/theme/app_colors.dart';
 import '../widgets/auth_widgets.dart';
 import 'auth_gate.dart';
 
 /// Tela de abertura do app: logo sobre o mesmo fundo do
-/// login, com uma breve espera antes de decidir pra onde ir (login ou
-/// direto pro app, via [AuthGate]). Puramente cosmético — não checa
-/// nenhuma sessão salva, já que a autenticação é só em memória.
+/// login, com uma breve espera antes de seguir para o [AuthGate], que
+/// decide entre o login e o app conforme a sessão salva no aparelho.
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -20,9 +20,7 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
     Future.delayed(const Duration(milliseconds: 1400), () {
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AuthGate()),
-      );
+      Navigator.of(context).pushReplacement(fadeRoute(const AuthGate()));
     });
   }
 
@@ -38,10 +36,14 @@ class _SplashScreenState extends State<SplashScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image.asset(
-                  'assets/images/logo.png',
-                  width: 220,
-                  fit: BoxFit.contain,
+                FadeSlideIn(
+                  duration: const Duration(milliseconds: 700),
+                  offset: const Offset(0, 0.1),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 220,
+                    fit: BoxFit.contain,
+                  ),
                 ),
                 const SizedBox(height: 28),
                 SizedBox(
@@ -50,7 +52,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   child: CircularProgressIndicator(
                     strokeWidth: 2.4,
                     valueColor: AlwaysStoppedAnimation(
-                      AppColors.accentLight.withOpacity(0.8),
+                      AppColors.accentLight.withValues(alpha: 0.8),
                     ),
                   ),
                 ),

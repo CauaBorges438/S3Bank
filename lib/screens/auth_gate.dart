@@ -5,16 +5,20 @@ import 'auth/login_screen.dart';
 import 'main_navigation_screen.dart';
  
 /// Troca entre a tela de login e o app principal com base em
-/// [AuthProvider.isLoggedIn]. Sem nenhuma verificação de sessão salva
-/// em disco — é só estado em memória, então todo restart do app volta
-/// pro login.
+/// [AuthProvider.isLoggedIn]. A sessão fica salva no aparelho (ver
+/// [AuthProvider]), então ao reabrir o app o usuário continua logado.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
  
   @override
   Widget build(BuildContext context) {
     final isLoggedIn = context.watch<AuthProvider>().isLoggedIn;
-    return isLoggedIn ? const MainNavigationScreen() : const LoginScreen();
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 400),
+      child: isLoggedIn
+          ? const MainNavigationScreen(key: ValueKey('main'))
+          : const LoginScreen(key: ValueKey('login')),
+    );
   }
 }
  

@@ -10,13 +10,13 @@ import '../../widgets/gradient_button.dart';
 enum _Step { identify, code, newPassword, done }
 
 /// Recuperação de senha em 3 etapas:
-/// 1. informa o e-mail  2. digita o código recebido  3. define a nova senha.
+/// 1. informa CPF/e-mail  2. digita o código recebido  3. define a nova senha.
 ///
 /// As três etapas usam o [AuthProvider], que confere a conta e grava a
 /// nova senha no aparelho. Como não há servidor de e-mail/SMS, o código
 /// é exibido na própria tela (modo demonstração).
 ///
-/// TODO(integração-backend): enviar o código por e-mail/SMS de verdade.
+/// O código de 6 dígitos é enviado por e-mail pelo Supabase Auth.
 class ForgotPasswordScreen extends StatefulWidget {
   /// Pré-preenche o campo com o que o usuário já digitou no login.
   final String? initialIdentifier;
@@ -310,8 +310,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             subtitle: 'Enviamos um código de 6 dígitos para $_maskedIdentifier.',
           ),
           const SizedBox(height: 16),
-          _DemoCodeBox(code: context.read<AuthProvider>().demoResetCode),
-          const SizedBox(height: 16),
           AuthTextField(
             controller: _codeController,
             label: 'Código de 6 dígitos',
@@ -373,11 +371,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           AuthTextField(
             controller: _passwordController,
             label: 'Nova senha',
+            keyboardType: TextInputType.number,
+            inputFormatters: AuthProvider.passwordFormatters,
             icon: Icons.lock_outline,
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.next,
-            validator: (v) =>
-                (v == null || v.length < 6) ? 'Mínimo de 6 caracteres' : null,
+            validator: AuthProvider.passwordError,
             suffixIcon: IconButton(
               icon: Icon(
                 _obscurePassword
@@ -394,6 +393,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           AuthTextField(
             controller: _confirmController,
             label: 'Confirmar nova senha',
+            keyboardType: TextInputType.number,
+            inputFormatters: AuthProvider.passwordFormatters,
             icon: Icons.lock_outline,
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
@@ -457,7 +458,7 @@ class _StepIndicator extends StatelessWidget {
             decoration: BoxDecoration(
               color: active
                   ? AppColors.accentLight
-                  : Colors.white.withOpacity(0.10),
+                  : Colors.white.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(999),
             ),
           ),
@@ -488,7 +489,7 @@ class _StepHeader extends StatelessWidget {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: AppColors.accentLight.withOpacity(0.14),
+            color: AppColors.accentLight.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(icon, color: AppColors.accentLight, size: 24),
@@ -516,46 +517,3 @@ class _StepHeader extends StatelessWidget {
   }
 }
 
-/// Mostra o código da recuperação na tela (modo demonstração), já que o
-/// app não tem como enviar e-mail ou SMS de verdade.
-class _DemoCodeBox extends StatelessWidget {
-  final String? code;
-
-  const _DemoCodeBox({required this.code});
-
-  @override
-  Widget build(BuildContext context) {
-    if (code == null) return const SizedBox.shrink();
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.accentLight.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.accentLight.withOpacity(0.25)),
-      ),
-      child: Text.rich(
-        TextSpan(
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12.5,
-            height: 1.4,
-          ),
-          children: [
-            const TextSpan(text: 'Modo demonstração: seu código é '),
-            TextSpan(
-              text: code,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-              ),
-            ),
-            const TextSpan(
-              text: '. Em um app real, ele chegaria por e-mail ou SMS.',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

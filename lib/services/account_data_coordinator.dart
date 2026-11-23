@@ -1,21 +1,25 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/widgets.dart';
 import '../providers/auth_provider.dart';
 import '../providers/card_provider.dart';
 import '../providers/pix_keys_provider.dart';
 import '../providers/savings_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/wallet_provider.dart';
-import 'bank_service.dart';
+import 'local_store.dart';
 
-/// Liga a conta logada aos dados do app. O servidor (Supabase) é a
-/// fonte da verdade:
-///  - ao entrar numa conta, busca perfil, saldo, extrato, caixinhas,
-///    chaves Pix e cartão e entrega aos providers;
-///  - ao sair, limpa os providers (nada da conta anterior fica na tela);
-///  - [refresh] busca tudo de novo (chamado depois de cada operação).
-class AccountDataCoordinator {
-  final BankService service;
+/// Liga a conta logada aos dados do app:
+///  - ao entrar numa conta, carrega os dados salvos dela nos providers
+///    (conta sem dados salvos começa do zero);
+///  - a cada mudança nos providers, salva tudo no disco (com um pequeno
+///    atraso para agrupar várias mudanças seguidas);
+///  - ao sair, salva a conta que estava aberta.
+///
+/// Cada conta tem o seu próprio bloco de dados (`data.<id da conta>`).
+class AccountDataCoordinator with WidgetsBindingObserver {
+  final LocalStore store;
   final AuthProvider auth;
   final UserProvider user;
   final WalletProvider wallet;
@@ -24,10 +28,11 @@ class AccountDataCoordinator {
   final CardProvider card;
 
   String? _loadedId;
-  int _seq = 0;
+  bool _busy = false;
+  Timer? _debounce;
 
   AccountDataCoordinator({
-    required this.service,
+    required this.store,
     required this.auth,
     required this.user,
     required this.wallet,
@@ -36,60 +41,123 @@ class AccountDataCoordinator {
     required this.card,
   }) {
     auth.addListener(_onAuthChanged);
-    _onAuthChanged(); // sessão restaurada
+    // O cartão acompanha o perfil (nome e nível). Antes isso era feito dentro
+    // do build do Dashboard, o que notificava ouvintes durante o build.
+    user.addListener(_syncCard);
+    final List<ChangeNotifier> watched = [user, wallet, savings, pixKeys];
+    for (final provider in watched) {
+      provider.addListener(_scheduleSave);
+    }
+    _onAuthChanged(); // sessão restaurada do disco
+  }
+
+  String _dataKey(String id) => 'data.$id';
+
+  void _syncCard() {
+    card.updateHolderName(user.name);
+    card.syncTier(user.tier);
+  }
+
+  /// Registra o salvamento imediato quando o app vai para segundo plano
+  /// (sem isso, a última alteração feita nos 300 ms antes de fechar o app
+  /// podia se perder). Chame uma vez, depois de `ensureInitialized`.
+  void attachLifecycle() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Salva agora, sem esperar o atraso do salvamento automático.
+  void flush() {
+    final id = _loadedId;
+    if (id == null) return;
+    _debounce?.cancel();
+    _saveNow(id);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      flush();
+    }
   }
 
   void _onAuthChanged() {
     final account = auth.currentAccount;
     if (account?.id == _loadedId) return;
 
-    _seq++; // invalida qualquer busca em andamento
-    _loadedId = account?.id;
+    _debounce?.cancel();
+    final previous = _loadedId;
+    if (previous != null) _saveNow(previous); // conta que está saindo
+    _loadedId = null;
 
-    // Limpa antes de buscar: não mostra dados da conta anterior nem os
-    // valores de exemplo dos providers enquanto a rede responde.
-    user.startNewProfile(account?.name ?? '');
-    wallet.resetForNewAccount();
-    savings.resetForNewAccount();
-    pixKeys.resetForNewAccount();
-
-    if (account != null) refresh();
+    if (account == null) {
+      // Não deixa os dados de quem saiu aparecerem para o próximo usuário.
+      wallet.clearSession();
+      savings.clearSession();
+      pixKeys.clearSession();
+      user.clearSession();
+      return;
+    }
+    _load(account);
+    _loadedId = account.id;
+    // No modo banco, busca tudo do servidor.
+    wallet.refreshFromServer();
+    savings.refreshFromServer();
+    pixKeys.refreshFromServer();
+    user.refreshFromServer();
   }
 
-  /// Busca tudo no servidor. Retorna uma mensagem de erro ou `null`.
-  Future<String?> refresh() async {
-    final account = auth.currentAccount;
-    if (account == null) return 'Sessão expirada';
-    final seq = ++_seq;
-
+  void _load(Account account) {
+    _busy = true;
     try {
-      final snap = await service.load(account.id);
-      // Trocou de conta (ou outra busca mais nova começou) durante a espera.
-      if (seq != _seq || auth.currentAccount?.id != account.id) return null;
-
-      user.restore(snap.user);
-      wallet.restore({
-        'balance': snap.balance,
-        'balanceVisible': wallet.balanceVisible, // preferência local
-        'transactions': snap.transactions,
-      });
-      savings.restore(snap.savings);
-      pixKeys.restore(snap.pixKeys);
-
-      final c = snap.card;
-      if (c != null) {
-        card.applyDetails(
-          holderName: c['holderName']!,
-          cardNumber: c['cardNumber']!,
-          expiry: c['expiry']!,
-          cvv: c['cvv']!,
-        );
+      var restored = false;
+      final raw = store.getString(_dataKey(account.id));
+      if (raw != null) {
+        try {
+          final data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+          user.restore(Map<String, dynamic>.from(data['user'] as Map? ?? {}));
+          wallet.restore(Map<String, dynamic>.from(data['wallet'] as Map? ?? {}));
+          savings.restore(Map<String, dynamic>.from(data['savings'] as Map? ?? {}));
+          pixKeys.restore(Map<String, dynamic>.from(data['pixKeys'] as Map? ?? {}));
+          restored = true;
+        } catch (_) {
+          restored = false; // dado corrompido: cai no caso "sem dados"
+        }
       }
+
+      if (!restored) {
+        user.startNewProfile(account.name);
+        wallet.resetForNewAccount();
+        savings.resetForNewAccount();
+        pixKeys.resetForNewAccount();
+      }
+
+      // O cartão é derivado do perfil (nome e nível).
+      card.updateHolderName(user.name);
       card.syncTier(user.tier);
-      return null;
-    } catch (e) {
-      debugPrint('Falha ao carregar do Supabase: $e');
-      return 'Não foi possível carregar seus dados. Verifique a conexão.';
+    } finally {
+      _busy = false;
     }
+  }
+
+  void _scheduleSave() {
+    final id = _loadedId;
+    if (_busy || id == null) return;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => _saveNow(id));
+  }
+
+  void _saveNow(String id) {
+    store.setString(
+      _dataKey(id),
+      jsonEncode({
+        'version': 1,
+        'user': user.toJson(),
+        'wallet': wallet.toJson(),
+        'savings': savings.toJson(),
+        'pixKeys': pixKeys.toJson(),
+      }),
+    );
   }
 }

@@ -35,10 +35,10 @@ class DigitalCardWidget extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: gradientColors,
         ),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         boxShadow: [
           BoxShadow(
-            color: gradientColors.last.withOpacity(0.4),
+            color: gradientColors.last.withValues(alpha: 0.4),
             blurRadius: 28,
             offset: const Offset(0, 14),
           ),
@@ -76,40 +76,54 @@ class DigitalCardWidget extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          _ChipAndContactless(),
+          const _ChipAndContactless(),
           const Spacer(),
-          Text(
-            showDetails ? card.groupedNumber : card.maskedNumber,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              letterSpacing: 2,
-              fontWeight: FontWeight.w500,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: FittedBox(
+              key: ValueKey(showDetails),
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                showDetails ? card.groupedNumber : card.maskedNumber,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    card.holderName.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+              // Flexible + ellipsis: nome comprido não estoura mais a linha.
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      card.holderName.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  const Text(
-                    'Apenas débito',
-                    style: TextStyle(color: Colors.white70, fontSize: 10),
-                  ),
-                ],
+                    const Text(
+                      'Apenas débito',
+                      style: TextStyle(color: Colors.white70, fontSize: 10),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Text(
-                showDetails ? '${card.expiry}  •  CVV ${card.cvv}' : card.expiry,
+                showDetails ? '${card.expiry}  •  CVV ${card.cvv}' : '••/••',
                 style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
             ],
@@ -121,6 +135,8 @@ class DigitalCardWidget extends StatelessWidget {
 }
 
 class _ChipAndContactless extends StatelessWidget {
+  const _ChipAndContactless();
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -138,7 +154,7 @@ class _ChipAndContactless extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Icon(Icons.wifi, color: Colors.white.withOpacity(0.9), size: 20),
+        Icon(Icons.wifi, color: Colors.white.withValues(alpha: 0.9), size: 20),
       ],
     );
   }

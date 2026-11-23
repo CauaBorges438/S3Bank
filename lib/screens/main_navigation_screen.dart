@@ -15,13 +15,31 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
+
+  // Fade ao trocar de aba. O IndexedStack continua preservando o estado
+  // de cada aba (por isso não usamos AnimatedSwitcher aqui).
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 260),
+    value: 1,
+  );
+  late final Animation<double> _fadeAnim =
+      CurvedAnimation(parent: _fade, curve: Curves.easeOut);
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    super.dispose();
+  }
 
   void _goToTab(int index) {
     if (index == _currentIndex) return;
     HapticFeedback.selectionClick();
     setState(() => _currentIndex = index);
+    _fade.forward(from: 0);
   }
 
   static const _items = [
@@ -40,8 +58,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       const CardScreen(),
     ];
 
-    return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: screens),
+    // Botão voltar do Android: numa aba que não é o Início, volta ao Início
+    // em vez de fechar o app.
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goToTab(0);
+      },
+      child: Scaffold(
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: IndexedStack(index: _currentIndex, children: screens),
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -52,7 +80,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           border: Border(top: BorderSide(color: AppColors.border)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
               blurRadius: 24,
               offset: const Offset(0, -8),
             ),
@@ -78,6 +106,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -97,7 +126,11 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
       child: AnimatedContainer(
@@ -135,6 +168,7 @@ class _NavItem extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import '../animations/animations.dart';
 import '../core/theme/app_colors.dart';
 
 class BalanceCard extends StatelessWidget {
   final double balance;
   final bool visible;
   final VoidCallback onToggleVisibility;
+
+  static const _valueStyle = TextStyle(
+    fontSize: 32,
+    fontWeight: FontWeight.w800,
+    color: AppColors.textPrimary,
+    letterSpacing: -0.5,
+  );
 
   const BalanceCard({
     super.key,
@@ -16,7 +23,6 @@ class BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formatter = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -51,19 +57,29 @@ class BalanceCard extends StatelessWidget {
                   ),
                 ],
               ),
-              GestureDetector(
-                onTap: onToggleVisibility,
-                child: Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    visible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    size: 16,
-                    color: AppColors.textSecondary,
+              Semantics(
+                button: true,
+                label: visible ? 'Ocultar saldo' : 'Mostrar saldo',
+                child: TapScale(
+                  onTap: onToggleVisibility,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: const BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      shape: BoxShape.circle,
+                    ),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        visible
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        key: ValueKey(visible),
+                        size: 17,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -75,13 +91,16 @@ class BalanceCard extends StatelessWidget {
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 4),
-          Text(
-            visible ? formatter.format(balance) : 'R\$ ••••••',
-            style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.5,
+          // O valor "rola" até o saldo; ao ocultar, troca por bolinhas com fade.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: FittedBox(
+              key: ValueKey(visible),
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: visible
+                  ? AnimatedCounter(value: balance, style: _valueStyle)
+                  : const Text('R\$ ••••••', style: _valueStyle),
             ),
           ),
         ],

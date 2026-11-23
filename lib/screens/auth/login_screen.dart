@@ -1,10 +1,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../animations/animations.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/auth_widgets.dart';
-import '../../widgets/gradient_button.dart';
+import '../../widgets/morph_button.dart';
 import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
 
@@ -24,11 +25,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _loading = false;
-  bool _resending = false;
   String? _errorMessage;
-
-  bool get _showResendConfirmation =>
-      _errorMessage == 'Confirme seu e-mail antes de entrar';
 
   @override
   void dispose() {
@@ -58,41 +55,18 @@ class _LoginScreenState extends State<LoginScreen> {
     // troca a tela — não precisa navegar manualmente daqui.
   }
 
-  Future<void> _resendConfirmation() async {
-    setState(() => _resending = true);
-
-    final error = await context
-        .read<AuthProvider>()
-        .resendConfirmationEmail(_loginController.text);
-
-    if (!mounted) return;
-    setState(() => _resending = false);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          error ?? 'E-mail de confirmação reenviado. Confira sua caixa de entrada (e o spam).',
-        ),
-      ),
-    );
-  }
-
   void _toggleObscurePassword() {
     setState(() => _obscurePassword = !_obscurePassword);
   }
 
   void _goToSignup() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const SignupScreen()),
-    );
+    Navigator.of(context).push(fadeSlideRoute(const SignupScreen()));
   }
 
   void _goToForgotPassword() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ForgotPasswordScreen(
-          initialIdentifier: _loginController.text,
-        ),
+      fadeSlideRoute(
+        ForgotPasswordScreen(initialIdentifier: _loginController.text),
       ),
     );
   }
@@ -109,30 +83,40 @@ class _LoginScreenState extends State<LoginScreen> {
           const AuthBackdrop(),
           SafeArea(
             bottom: false,
-            child: Column(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(28, keyboardOpen ? 16 : 40, 28, 0),
-                    child: _Hero(compact: keyboardOpen),
+            // LayoutBuilder: limita a ficha de acesso a 85% da área útil.
+            // Se ela não couber (tela pequena, fonte grande, teclado
+            // aberto), rola por dentro em vez de estourar a tela.
+            child: LayoutBuilder(
+              builder: (context, constraints) => Column(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                          28, keyboardOpen ? 16 : 40, 28, 0),
+                      child: _Hero(compact: keyboardOpen),
+                    ),
                   ),
-                ),
-                _AccessSheet(
-                  formKey: _formKey,
-                  loginController: _loginController,
-                  passwordController: _passwordController,
-                  obscurePassword: _obscurePassword,
-                  loading: _loading,
-                  errorMessage: _errorMessage,
-                  showResendConfirmation: _showResendConfirmation,
-                  resending: _resending,
-                  onToggleObscurePassword: _toggleObscurePassword,
-                  onSubmit: _submit,
-                  onResendConfirmation: _resendConfirmation,
-                  onForgotPassword: _goToForgotPassword,
-                  onGoToSignup: _goToSignup,
-                ),
-              ],
+                  ConstrainedBox(
+                    constraints:
+                        BoxConstraints(maxHeight: constraints.maxHeight * 0.85),
+                    child: FadeSlideIn(
+                      offset: const Offset(0, 0.12),
+                      child: _AccessSheet(
+                      formKey: _formKey,
+                      loginController: _loginController,
+                      passwordController: _passwordController,
+                      obscurePassword: _obscurePassword,
+                      loading: _loading,
+                      errorMessage: _errorMessage,
+                      onToggleObscurePassword: _toggleObscurePassword,
+                      onSubmit: _submit,
+                      onForgotPassword: _goToForgotPassword,
+                      onGoToSignup: _goToSignup,
+                    ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -150,40 +134,52 @@ class _Hero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Center(
-          child: Image.asset(
-            'assets/images/logo.png',
-            width: compact ? 130 : 170,
-            fit: BoxFit.contain,
+    // LayoutBuilder + scroll: em telas baixas (ou com fonte grande) o
+    // conteúdo rola em vez de estourar ("BOTTOM OVERFLOWED").
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: IntrinsicHeight(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: compact ? 130 : 170,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+                if (!compact) ...[
+                  const Spacer(),
+                  const Text(
+                    'Que bom te ver\nde novo.',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Acesse sua conta e acompanhe sua evolução, aporte a aporte.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                ],
+              ],
+            ),
           ),
         ),
-        if (!compact) ...[
-          const Spacer(),
-          const Text(
-            'Que bom te ver\nde novo.',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 32,
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Acesse sua conta e acompanhe sua evolução, aporte a aporte.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 14,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 28),
-        ],
-      ],
+      ),
     );
   }
 }
@@ -196,11 +192,8 @@ class _AccessSheet extends StatelessWidget {
   final bool obscurePassword;
   final bool loading;
   final String? errorMessage;
-  final bool showResendConfirmation;
-  final bool resending;
   final VoidCallback onToggleObscurePassword;
   final VoidCallback onSubmit;
-  final VoidCallback onResendConfirmation;
   final VoidCallback onForgotPassword;
   final VoidCallback onGoToSignup;
 
@@ -211,11 +204,8 @@ class _AccessSheet extends StatelessWidget {
     required this.obscurePassword,
     required this.loading,
     required this.errorMessage,
-    required this.showResendConfirmation,
-    required this.resending,
     required this.onToggleObscurePassword,
     required this.onSubmit,
-    required this.onResendConfirmation,
     required this.onForgotPassword,
     required this.onGoToSignup,
   });
@@ -237,9 +227,9 @@ class _AccessSheet extends StatelessWidget {
             keyboardOpen ? 20 : MediaQuery.of(context).padding.bottom + 24,
           ),
           decoration: BoxDecoration(
-            color: AppColors.surface.withOpacity(0.86),
+            color: AppColors.surface.withValues(alpha: 0.86),
             border: Border(
-              top: BorderSide(color: Colors.white.withOpacity(0.08)),
+              top: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
             ),
           ),
           child: SingleChildScrollView(
@@ -309,37 +299,21 @@ class _AccessSheet extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  if (errorMessage != null) ...[
-                    AuthErrorBanner(message: errorMessage!),
-                    if (showResendConfirmation) ...[
-                      const SizedBox(height: 6),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton(
-                          onPressed: resending ? null : onResendConfirmation,
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.accentLight,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            minimumSize: const Size(0, 32),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.topCenter,
+                    child: errorMessage == null
+                        ? const SizedBox(width: double.infinity)
+                        : Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: AuthErrorBanner(message: errorMessage!),
                           ),
-                          child: Text(
-                            resending
-                                ? 'Reenviando...'
-                                : 'Reenviar e-mail de confirmação',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                  ],
-                  GradientButton(
-                    label: loading ? 'ENTRANDO...' : 'ENTRAR',
-                    onTap: loading ? null : onSubmit,
+                  ),
+                  MorphButton(
+                    label: 'ENTRAR',
+                    loading: loading,
+                    onTap: onSubmit,
                   ),
                   const SizedBox(height: 18),
                   Center(

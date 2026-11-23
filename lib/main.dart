@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/config/supabase_config.dart';
+import 'core/security/secure_session_storage.dart';
+import 'core/security/security_lock_controller.dart';
 import 'core/theme/app_theme.dart';
 import 'models/user_tier.dart';
 import 'providers/auth_provider.dart';
@@ -11,33 +15,46 @@ import 'providers/user_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'screens/splash_screen.dart';
 import 'services/account_data_coordinator.dart';
-import 'services/bank_actions.dart';
-import 'services/bank_service.dart';
-import 'services/supabase_config.dart';
+import 'services/ledger_repository.dart';
+import 'services/local_store.dart';
+import 'widgets/security/app_lock_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SupabaseConfig.ensureConfigured();
+  // App de banco: só em pé (retrato), como a maioria dos apps financeiros.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
   await Supabase.initialize(
     url: SupabaseConfig.url,
-    anonKey: SupabaseConfig.anonKey,
+    publishableKey: SupabaseConfig.anonKey,
+    // Sessão no Keystore/Keychain em vez de SharedPreferences.
+    authOptions: FlutterAuthClientOptions(
+      localStorage: SecureSessionStorage(),
+    ),
   );
 
+  final store = await LocalStore.create();
+
   final auth = AuthProvider();
-  final user = UserProvider();
-  final wallet = WalletProvider();
-  final savings = SavingsProvider();
-  final pixKeys = PixKeysProvider();
+  final security = SecurityLockController()..attach();
+  final user = UserProvider()..attachLedger(LedgerRepository());
+  final wallet = WalletProvider()..attachLedger(LedgerRepository());
+  final savings = SavingsProvider()..attachLedger(LedgerRepository());
+  final pixKeys = PixKeysProvider()..attachLedger(LedgerRepository());
   final card = CardProvider(
-    holderName: 'Rafaela Souza',
+    holderName: 'Cliente', // o nome real é colocado ao entrar na conta
     initialTier: UserTier.bronze,
   );
 
+  // Sessão restaurada = app reaberto já logado: exige biometria antes da conta.
+  if (Supabase.instance.client.auth.currentSession != null) {
+    security.lockOnLaunch();
+  }
+
   // Carrega/salva os dados da conta logada nos providers acima.
-  final service = BankService();
   final coordinator = AccountDataCoordinator(
-    service: service,
+    store: store,
     auth: auth,
     user: user,
     wallet: wallet,
@@ -46,16 +63,12 @@ Future<void> main() async {
     card: card,
   );
 
-  final actions = BankActions(
-    service: service,
-    coordinator: coordinator,
-    auth: auth,
-  );
+  coordinator.attachLifecycle();
 
   runApp(S3BankApp(
     coordinator: coordinator,
-    actions: actions,
     auth: auth,
+    security: security,
     user: user,
     wallet: wallet,
     savings: savings,
@@ -67,8 +80,8 @@ Future<void> main() async {
 class S3BankApp extends StatelessWidget {
   // Mantém o coordenador vivo durante toda a execução do app.
   final AccountDataCoordinator coordinator;
-  final BankActions actions;
   final AuthProvider auth;
+  final SecurityLockController security;
   final UserProvider user;
   final WalletProvider wallet;
   final SavingsProvider savings;
@@ -78,8 +91,8 @@ class S3BankApp extends StatelessWidget {
   const S3BankApp({
     super.key,
     required this.coordinator,
-    required this.actions,
     required this.auth,
+    required this.security,
     required this.user,
     required this.wallet,
     required this.savings,
@@ -91,8 +104,8 @@ class S3BankApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider<BankActions>.value(value: actions),
         ChangeNotifierProvider<AuthProvider>.value(value: auth),
+        ChangeNotifierProvider<SecurityLockController>.value(value: security),
         ChangeNotifierProvider<UserProvider>.value(value: user),
         ChangeNotifierProvider<WalletProvider>.value(value: wallet),
         ChangeNotifierProvider<SavingsProvider>.value(value: savings),
@@ -104,6 +117,10 @@ class S3BankApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark,
         home: const SplashScreen(),
+        builder: (context, child) => AppLockOverlay(
+          onSignOut: () => context.read<AuthProvider>().signOut(),
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
     );
   }

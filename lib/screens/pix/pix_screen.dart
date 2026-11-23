@@ -1,18 +1,25 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/pin_gate.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+
+import '../../core/pix_payload_parser.dart';
+import '../../services/ledger_repository.dart';
+import 'qr_scanner_screen.dart';
+import '../../animations/animations.dart';
 import '../../core/pix_payload_generator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/currency_input_formatter.dart';
 import '../../providers/pix_keys_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../../services/bank_actions.dart';
+import '../../widgets/gradient_button.dart';
+import '../../widgets/success_dialog.dart';
 import '../../widgets/transaction_tile.dart';
 import '../../models/transaction.dart';
-
 
 // Dados usados na geração da cobrança. O nome do recebedor vem do usuário
 // logado (UserProvider.name) e a chave Pix de "Minhas Chaves"
@@ -70,7 +77,7 @@ class PixScreen extends StatelessWidget {
                   icon: Icons.qr_code_scanner,
                   title: 'QR Code',
                   subtitle: 'Escanear para pagar',
-                  onTap: () => _showPayModal(context, prefillQr: true),
+                  onTap: () => _scanQr(context),
                 ),
               ],
             ),
@@ -96,14 +103,106 @@ class PixScreen extends StatelessWidget {
     );
   }
 
-  void _showPayModal(BuildContext context, {bool prefillQr = false}) {
-    final wallet = context.read<WalletProvider>();
-    final actions = context.read<BankActions>();
-    final messenger = ScaffoldMessenger.of(context);
-    final recipientController = TextEditingController(
-      text: prefillQr ? 'QR Code • Loja Exemplo' : '',
+  /// Abre a câmera, lê o QR Code do Pix e abre o pagamento já preenchido.
+  Future<void> _scanQr(BuildContext context) async {
+    final raw = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
     );
-    final amountController = TextEditingController();
+    if (raw == null || !context.mounted) return;
+
+    final parsed = PixPayloadParser.tryParse(raw);
+    if (parsed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este QR Code não é um Pix válido.')),
+      );
+      return;
+    }
+    if (parsed.txid != null) {
+      await _payChargeFromQr(context, parsed.txid!);
+      return;
+    }
+    _showPayModal(context, prefill: parsed);
+  }
+
+  /// Cobrança com valor e validade: mostra quem recebe e quanto, e só paga
+  /// se a pessoa confirmar.
+  Future<void> _payChargeFromQr(BuildContext context, String txid) async {
+    final wallet = context.read<WalletProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (!wallet.isServerBacked) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Cobranças exigem conexão com o banco.')),
+      );
+      return;
+    }
+
+    Map<String, dynamic> info;
+    try {
+      info = await wallet.getCharge(txid);
+    } on LedgerException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+
+    final amount = (info['charge_amount_cents'] as num).toInt() / 100;
+    final name = info['receiver_name'] as String? ?? 'Destinatário';
+    final description = info['charge_description'] as String?;
+    final status = info['charge_status'] as String;
+    final expiresAt = DateTime.parse(info['charge_expires_at'] as String);
+
+    if (status != 'open' || expiresAt.isBefore(DateTime.now())) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Esta cobrança não está mais disponível.')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar pagamento'),
+        content: Text(
+          'Pagar ${_brl(amount)} para $name?'
+          '${description == null ? '' : '\n$description'}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Pagar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    if (!context.mounted) return;
+    final auth = await obtainPinAuth(context);
+    if (auth == null) return;
+    final error = await wallet.payCharge(txid, auth);
+    messenger.showSnackBar(
+      SnackBar(content: Text(error ?? 'Pagamento de ${_brl(amount)} enviado!')),
+    );
+  }
+
+  static String _brl(double value) =>
+      'R\$ ${value.toStringAsFixed(2).replaceAll('.', ',')}';
+
+  /// Valor no formato do campo (ex.: 25,50).
+  static String _amountField(double value) =>
+      value.toStringAsFixed(2).replaceAll('.', ',');
+
+  void _showPayModal(BuildContext context, {PixPayload? prefill}) {
+    final wallet = context.read<WalletProvider>();
+    final recipientController = TextEditingController(text: prefill?.key ?? '');
+    final amountController = TextEditingController(
+      text: prefill?.amount != null ? _amountField(prefill!.amount!) : '',
+    );
     final formKey = GlobalKey<FormState>();
 
     showModalBottomSheet(
@@ -134,6 +233,7 @@ class PixScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: recipientController,
+                    readOnly: prefill != null,
                     decoration: const InputDecoration(
                       labelText: 'Chave Pix, e-mail ou "Copia e Cola"',
                     ),
@@ -143,6 +243,7 @@ class PixScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: amountController,
+                    readOnly: prefill?.amount != null,
                     keyboardType: TextInputType.number,
                     inputFormatters: [CurrencyInputFormatter(maxDigits: 12)],
                     decoration: const InputDecoration(
@@ -158,19 +259,49 @@ class PixScreen extends StatelessWidget {
                     },
                   ),
                   const SizedBox(height: 20),
-                  _GradientButton(
+                  GradientButton(
                     label: 'Confirmar pagamento',
                     onTap: () async {
                       if (!formKey.currentState!.validate()) return;
-                      final amount = _parseAmount(amountController.text)!;
-                      final error = await actions.sendPix(
-                        amount,
-                        recipientController.text.trim(),
-                      );
-                      if (ctx.mounted) Navigator.of(ctx).pop();
-                      messenger.showSnackBar(
-                        SnackBar(content: Text(error ?? 'Pix enviado com sucesso!')),
-                      );
+                      // Aceita chave, e-mail ou o "Copia e Cola" inteiro do QR.
+                      final typed = recipientController.text.trim();
+                      final parsed = PixPayloadParser.tryParse(typed);
+                      if (parsed?.txid != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Para pagar uma cobrança, use a câmera (QR Code).'),
+                          ),
+                        );
+                        return;
+                      }
+                      final recipient = parsed?.key ?? typed;
+                      final amount = parsed?.amount ?? _parseAmount(amountController.text)!;
+                      // Fecha o painel antes de pedir o PIN: o diálogo do PIN não
+                      // pode nascer por cima de um painel que está sendo fechado.
+                      Navigator.of(ctx).pop();
+                      if (!context.mounted) return;
+                      final auth = await obtainPinAuth(context);
+                      if (auth == null) return;
+                      final error = await wallet.payPix(amount, recipient: recipient, auth: auth);
+                      if (!context.mounted) return;
+                      if (error == null) {
+                        HapticFeedback.mediumImpact();
+                        // O "Copia e Cola" pode ser enorme: encurta no aviso.
+                        final shown = recipient.length > 40
+                            ? '${recipient.substring(0, 37)}...'
+                            : recipient;
+                        showSuccessDialog(
+                          context,
+                          title: 'Pix enviado!',
+                          subtitle: '${_currencyFmt.format(amount)} para $shown',
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error),
+                          ),
+                        );
+                      }
                     },
                   ),
                 ],
@@ -179,12 +310,14 @@ class PixScreen extends StatelessWidget {
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      recipientController.dispose();
+      amountController.dispose();
+    });
   }
 
   void _showReceiveModal(BuildContext context) {
-    final actions = context.read<BankActions>();
-    final messenger = ScaffoldMessenger.of(context);
+    final wallet = context.read<WalletProvider>();
     final receiveKey = context.read<PixKeysProvider>().primaryKey;
     final merchantName = context.read<UserProvider>().name;
     if (receiveKey == null) {
@@ -229,17 +362,43 @@ class PixScreen extends StatelessWidget {
                         formKey: formKey,
                         senderController: senderController,
                         amountController: amountController,
-                        onGenerate: () {
+                        onGenerate: () async {
                           if (!formKey.currentState!.validate()) return;
                           final amount = _parseAmount(amountController.text)!;
                           final sender = senderController.text.trim();
-                          final payload = PixPayloadGenerator.generate(
-                            pixKey: receiveKey.payloadValue,
-                            merchantName: merchantName,
-                            merchantCity: _kMerchantCity,
-                            amount: amount,
-                            description: sender.isEmpty ? null : 'Cobranca de $sender',
-                          );
+                          final description = sender.isEmpty ? null : 'Cobranca de $sender';
+                          String payload;
+                          if (wallet.isServerBacked) {
+                            try {
+                              final charge = await wallet.createCharge(
+                                amount: amount,
+                                description: description,
+                              );
+                              payload = PixPayloadGenerator.generate(
+                                pixKey: charge.pixKey,
+                                merchantName: merchantName,
+                                merchantCity: _kMerchantCity,
+                                amount: amount,
+                                description: description,
+                                txId: charge.txid,
+                              );
+                            } on LedgerException catch (e) {
+                              if (!ctx.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e.message)),
+                              );
+                              return;
+                            }
+                          } else {
+                            payload = PixPayloadGenerator.generate(
+                              pixKey: receiveKey.payloadValue,
+                              merchantName: merchantName,
+                              merchantCity: _kMerchantCity,
+                              amount: amount,
+                              description: description,
+                            );
+                          }
+                          if (!ctx.mounted) return;
                           setState(() => generatedPayload = payload);
                         },
                       )
@@ -251,9 +410,10 @@ class PixScreen extends StatelessWidget {
                           final sender = senderController.text.trim().isEmpty
                               ? 'Recebimento Pix'
                               : senderController.text.trim();
-                          final error = await actions.receivePix(amount, sender);
-                          if (ctx.mounted) Navigator.of(ctx).pop();
-                          messenger.showSnackBar(
+                          final error = await wallet.receiveSimulatedPix(amount, sender: sender);
+                          if (!ctx.mounted || !context.mounted) return;
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(error ?? 'Pagamento simulado com sucesso!'),
                             ),
@@ -265,7 +425,10 @@ class PixScreen extends StatelessWidget {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      senderController.dispose();
+      amountController.dispose();
+    });
   }
 
   Widget _buildChargeForm({
@@ -304,7 +467,7 @@ class PixScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: 20),
-          _GradientButton(label: 'Gerar QR Code', onTap: onGenerate),
+          GradientButton(label: 'Gerar QR Code', onTap: onGenerate),
         ],
       ),
     );
@@ -387,14 +550,18 @@ class PixScreen extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: onSimulatePayment,
-            child: const Text('Simular pagamento recebido'),
+        // Só em modo de desenvolvimento: este botão credita dinheiro sem
+        // pagador. Em produção ele não pode aparecer.
+        if (kDebugMode) ...[
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: onSimulatePayment,
+              child: const Text('Simular pagamento recebido (teste)'),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -453,14 +620,7 @@ class PixScreen extends StatelessWidget {
                             tooltip: 'Remover chave',
                             icon: const Icon(Icons.delete_outline,
                                 size: 20, color: AppColors.textSecondary),
-                            onPressed: () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              final error =
-                                  await context.read<BankActions>().removePixKey(k.id);
-                              if (error != null) {
-                                messenger.showSnackBar(SnackBar(content: Text(error)));
-                              }
-                            },
+                            onPressed: () => keysProvider.removeKey(k.id),
                           ),
                         ),
                       ),
@@ -481,8 +641,6 @@ class PixScreen extends StatelessWidget {
   }
 
   void _showAddKeyModal(BuildContext context, PixKeysProvider keysProvider) {
-    final actions = context.read<BankActions>();
-    final messenger = ScaffoldMessenger.of(context);
     final valueController = TextEditingController();
     final formKey = GlobalKey<FormState>();
     PixKeyType selectedType = PixKeyType.email;
@@ -516,7 +674,7 @@ class PixScreen extends StatelessWidget {
                           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<PixKeyType>(
-                        value: selectedType,
+                        initialValue: selectedType,
                         items: PixKeyType.values
                             .map((t) => DropdownMenuItem(value: t, child: Text(t.label)))
                             .toList(),
@@ -550,20 +708,32 @@ class PixScreen extends StatelessWidget {
                               keysProvider.validateInput(selectedType, v ?? ''),
                         ),
                       const SizedBox(height: 20),
-                      _GradientButton(
+                      GradientButton(
                         label: 'Salvar chave',
                         onTap: () async {
                           if (!formKey.currentState!.validate()) return;
-                          final error = selectedType == PixKeyType.random
-                              ? await actions.addRandomPixKey()
-                              : await actions.addPixKey(
-                                  selectedType,
-                                  // normalizada (CPF só dígitos, +55 no celular...)
-                                  selectedType.normalize(valueController.text)!,
-                                );
-                          if (ctx.mounted) Navigator.of(ctx).pop();
-                          if (error != null) {
-                            messenger.showSnackBar(SnackBar(content: Text(error)));
+                          String? error;
+                          if (keysProvider.isServerBacked) {
+                            error = selectedType == PixKeyType.random
+                                ? await keysProvider.addRandomKeyRemote()
+                                : await keysProvider.addKeyRemote(
+                                    type: selectedType,
+                                    value: valueController.text.trim(),
+                                  );
+                          } else if (selectedType == PixKeyType.random) {
+                            keysProvider.addRandomKey();
+                          } else {
+                            keysProvider.addKey(
+                              type: selectedType,
+                              value: valueController.text.trim(),
+                            );
+                          }
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          if (error != null && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(error)),
+                            );
                           }
                         },
                       ),
@@ -575,7 +745,9 @@ class PixScreen extends StatelessWidget {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      valueController.dispose();
+    });
   }
 }
 
@@ -596,7 +768,8 @@ class _PixActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // Material + InkWell: o efeito de toque (ripple) fica visível.
     // Com Container decorado dentro do InkWell, a cor cobria o ripple.
-    return Material(
+    return TapScale(
+      child: Material(
       color: AppColors.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
@@ -637,53 +810,6 @@ class _PixActionCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Botão de ação principal com o gradiente da marca — mesmo padrão do
-/// botão "ENTRAR" da tela de login, reaproveitado em todas as
-/// confirmações importantes do fluxo de Pix.
-class _GradientButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-
-  const _GradientButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: AppColors.loginGradient,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.loginBlueMid.withOpacity(0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: onTap,
-            child: Center(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

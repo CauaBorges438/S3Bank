@@ -22,7 +22,7 @@ class GradientButton extends StatelessWidget {
           gradient: AppColors.loginGradient,
           boxShadow: [
             BoxShadow(
-              color: AppColors.loginBlueMid.withOpacity(0.4),
+              color: AppColors.loginBlueMid.withValues(alpha: 0.4),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
