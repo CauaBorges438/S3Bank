@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../core/legal/legal_documents.dart';
+import '../legal/legal_screen.dart';
 import 'package:provider/provider.dart';
 import '../../animations/animations.dart';
 import '../../core/theme/app_colors.dart';
@@ -28,6 +31,7 @@ class _SignupScreenState extends State<SignupScreen> {
   final _cpfController = TextEditingController();
   final _celularController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _acceptedTerms = false;
   final _confirmController = TextEditingController();
   bool _obscurePassword = true;
   bool _loading = false;
@@ -44,8 +48,26 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
+  void _openLegal({required bool terms}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LegalScreen(
+          title: terms ? 'Termos de uso' : 'Política de privacidade',
+          sections: terms ? LegalDocuments.terms : LegalDocuments.privacy,
+          version: terms ? LegalDocuments.termsVersion : LegalDocuments.privacyVersion,
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (!_acceptedTerms) {
+      setState(() {
+        _errorMessage = 'Aceite os termos de uso e a política de privacidade para criar sua conta.';
+      });
+      return;
+    }
     setState(() {
       _loading = true;
       _errorMessage = null;
@@ -62,6 +84,7 @@ class _SignupScreenState extends State<SignupScreen> {
       password: _passwordController.text,
       cpf: _cpfController.text,
       celular: _celularController.text,
+      acceptedTerms: _acceptedTerms,
     );
 
     if (!mounted) return;
@@ -215,6 +238,14 @@ class _SignupScreenState extends State<SignupScreen> {
             icon: Icons.lock_outline,
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                color: AppColors.textSecondary,
+              ),
+              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            ),
+
             onSubmitted: (_) {
               if (!_loading) _submit();
             },
@@ -223,6 +254,41 @@ class _SignupScreenState extends State<SignupScreen> {
                 : null,
           ),
           const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: _acceptedTerms,
+                onChanged: _loading
+                    ? null
+                    : (v) => setState(() => _acceptedTerms = v ?? false),
+              ),
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text(
+                      'Li e aceito os',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    ),
+                    TextButton(
+                      onPressed: () => _openLegal(terms: true),
+                      child: const Text('Termos de uso'),
+                    ),
+                    const Text(
+                      'e a',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    ),
+                    TextButton(
+                      onPressed: () => _openLegal(terms: false),
+                      child: const Text('Política de privacidade'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOut,

@@ -276,6 +276,18 @@ class PixScreen extends StatelessWidget {
                       }
                       final recipient = parsed?.key ?? typed;
                       final amount = parsed?.amount ?? _parseAmount(amountController.text)!;
+                      if (amount <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Informe um valor maior que zero.')),
+                        );
+                        return;
+                      }
+                      if (amount > wallet.balance) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Saldo insuficiente para este Pix.')),
+                        );
+                        return;
+                      }
                       // Fecha o painel antes de pedir o PIN: o diálogo do PIN não
                       // pode nascer por cima de um painel que está sendo fechado.
                       Navigator.of(ctx).pop();
@@ -311,8 +323,11 @@ class PixScreen extends StatelessWidget {
         );
       },
     ).whenComplete(() {
-      recipientController.dispose();
-      amountController.dispose();
+      // Só descarta depois da animação de fechamento do painel.
+      Future.delayed(const Duration(milliseconds: 500), () {
+        recipientController.dispose();
+        amountController.dispose();
+      });
     });
   }
 

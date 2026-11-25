@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/br_validators.dart';
+import '../core/legal/legal_documents.dart';
 
 /// Conta do usuário logado. O [id] é o UUID do Supabase Auth, que é a
 /// mesma chave usada no banco (profiles, accounts, ledger_entries).
@@ -157,7 +158,7 @@ class AuthProvider extends ChangeNotifier {
     final email = normalizeEmail(identifier);
     if (email.isEmpty) return 'Informe seu e-mail';
     if (!isValidEmail(email)) return 'Informe um e-mail válido';
-    if (password.isEmpty) return 'Informe sua senha';
+    if (!isValidPassword(password)) return passwordMessage;
 
     try {
       await _auth.signInWithPassword(email: email, password: password);
@@ -177,7 +178,11 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     required String cpf,
     required String celular,
+    required bool acceptedTerms,
   }) async {
+    if (!acceptedTerms) {
+      return 'Aceite os termos de uso e a política de privacidade';
+    }
     if (name.trim().length < 2) return 'Informe seu nome completo';
     final cpfError = BrValidators.cpfError(cpf);
     if (cpfError != null) return cpfError;
@@ -195,6 +200,8 @@ class AuthProvider extends ChangeNotifier {
           'full_name': name.trim(),
           'cpf': BrValidators.digits(cpf),
           'phone': BrValidators.celularForStorage(celular),
+          'terms_version': LegalDocuments.termsVersion,
+          'terms_accepted_at': DateTime.now().toUtc().toIso8601String(),
         },
       );
       if (res.session == null) {

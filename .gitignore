@@ -5,3 +5,8 @@ build/
 .idea/
 *.iml
 .flutter-plugins-dependencies
+
+# Chaves de assinatura do Android (nunca versionar)
+android/key.properties
+*.jks
+*.keystore

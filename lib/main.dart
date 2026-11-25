@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/supabase_config.dart';
 import 'core/security/secure_session_storage.dart';
-import 'core/security/security_lock_controller.dart';
 import 'core/theme/app_theme.dart';
 import 'models/user_tier.dart';
 import 'providers/auth_provider.dart';
@@ -17,7 +16,6 @@ import 'screens/splash_screen.dart';
 import 'services/account_data_coordinator.dart';
 import 'services/ledger_repository.dart';
 import 'services/local_store.dart';
-import 'widgets/security/app_lock_overlay.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,7 +35,6 @@ Future<void> main() async {
   final store = await LocalStore.create();
 
   final auth = AuthProvider();
-  final security = SecurityLockController()..attach();
   final user = UserProvider()..attachLedger(LedgerRepository());
   final wallet = WalletProvider()..attachLedger(LedgerRepository());
   final savings = SavingsProvider()..attachLedger(LedgerRepository());
@@ -46,11 +43,6 @@ Future<void> main() async {
     holderName: 'Cliente', // o nome real é colocado ao entrar na conta
     initialTier: UserTier.bronze,
   );
-
-  // Sessão restaurada = app reaberto já logado: exige biometria antes da conta.
-  if (Supabase.instance.client.auth.currentSession != null) {
-    security.lockOnLaunch();
-  }
 
   // Carrega/salva os dados da conta logada nos providers acima.
   final coordinator = AccountDataCoordinator(
@@ -68,7 +60,6 @@ Future<void> main() async {
   runApp(S3BankApp(
     coordinator: coordinator,
     auth: auth,
-    security: security,
     user: user,
     wallet: wallet,
     savings: savings,
@@ -81,7 +72,6 @@ class S3BankApp extends StatelessWidget {
   // Mantém o coordenador vivo durante toda a execução do app.
   final AccountDataCoordinator coordinator;
   final AuthProvider auth;
-  final SecurityLockController security;
   final UserProvider user;
   final WalletProvider wallet;
   final SavingsProvider savings;
@@ -92,7 +82,6 @@ class S3BankApp extends StatelessWidget {
     super.key,
     required this.coordinator,
     required this.auth,
-    required this.security,
     required this.user,
     required this.wallet,
     required this.savings,
@@ -105,7 +94,6 @@ class S3BankApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthProvider>.value(value: auth),
-        ChangeNotifierProvider<SecurityLockController>.value(value: security),
         ChangeNotifierProvider<UserProvider>.value(value: user),
         ChangeNotifierProvider<WalletProvider>.value(value: wallet),
         ChangeNotifierProvider<SavingsProvider>.value(value: savings),
@@ -117,10 +105,6 @@ class S3BankApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark,
         home: const SplashScreen(),
-        builder: (context, child) => AppLockOverlay(
-          onSignOut: () => context.read<AuthProvider>().signOut(),
-          child: child ?? const SizedBox.shrink(),
-        ),
       ),
     );
   }

@@ -269,7 +269,7 @@ class _AccessSheet extends StatelessWidget {
                       if (!loading) onSubmit();
                     },
                     validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Informe sua senha' : null,
+                        AuthProvider.passwordError(v),
                     suffixIcon: IconButton(
                       icon: Icon(
                         obscurePassword

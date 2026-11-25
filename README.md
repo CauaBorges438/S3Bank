@@ -1,218 +1,237 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0B0B12,100:6A4CE0&height=200&section=header&text=S3%20Bank&fontSize=56&fontColor=ffffff&fontAlignY=38&desc=Conta%20digital%20gamificada%20com%20n%C3%ADveis%20atrelados%20ao%20CDI&descAlignY=58&descSize=18&descColor=B98CFF" width="100%" />
+# S3 Bank
+
+**Conta digital com gamificação de constância, construída em Flutter e Supabase.**
 
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
 ![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white)
-![Provider](https://img.shields.io/badge/State-Provider-6A4CE0?style=for-the-badge)
-![Material 3](https://img.shields.io/badge/Material_3-Dark-0B0B12?style=for-the-badge&logo=materialdesign&logoColor=B98CFF)
-![Status](https://img.shields.io/badge/Status-Conectado_ao_Supabase-3355D3?style=for-the-badge)
 ![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Protótipo_acadêmico-3355D3?style=for-the-badge)
 [![CI](https://github.com/camposdevs/S3_Bank_flutter/actions/workflows/flutter.yml/badge.svg)](https://github.com/camposdevs/S3_Bank_flutter/actions/workflows/flutter.yml)
 
 </div>
 
 ---
 
-<div align="center">
+> **Aviso:** este é um projeto acadêmico (Trabalho de Conclusão de Curso). Não é uma
+> instituição financeira, não está autorizado pelo Banco Central do Brasil e não realiza
+> transferências reais para outras instituições. Todos os valores são simulados.
 
-Um app bancário onde **quanto mais constante você é, mais seu dinheiro rende**.
-A cada aporte em "Guardar Dinheiro" você ganha pontos de constância, sobe de nível
-e desbloqueia um percentual maior do CDI, com um cartão digital que muda de visual junto com você e um cartão de crédito virtual com limite, compras e fatura.
+## Sobre o projeto
 
-Os dados ficam no **Supabase** (Postgres + Auth + RLS): contas, saldo, extrato, caixinhas, chaves Pix e cartões são lidos e gravados no servidor, e toda movimentação de dinheiro passa por funções do banco.
+O S3 Bank é um aplicativo de conta digital em que a constância no hábito de guardar dinheiro
+define o nível do usuário, e o nível define o percentual do CDI que as caixinhas rendem.
 
-</div>
-
----
+O projeto demonstra, de ponta a ponta, uma arquitetura bancária simplificada: livro-razão
+imutável, regras de negócio no banco de dados, autorização de operações por PIN e isolamento
+de dados entre usuários com Row Level Security.
 
 ## Funcionalidades
 
-| Área | O que tem |
-|------|-----------|
-| **Acesso** | Login, cadastro (com confirmação de e-mail) e recuperação de senha em 3 etapas (código por e-mail → nova senha → confirmação), via Supabase Auth |
-| **Início** | Saldo com opção de ocultar, nível atual, barra de progresso até o próximo nível e extrato |
-| **Pix** | Pagar, receber (QR Code + Pix Copia e Cola no padrão BR Code com CRC16) e gerenciar chaves |
-| **Guardar Dinheiro** | Caixinhas com metas, aportes, resgates e rendimento calculado sobre o CDI do nível |
-| **Cartão digital** | Cartão com visual do nível, dados mascarados e opção de bloquear |
-| **Cartão de crédito** | Cartão virtual (número, validade e CVV aparecem só na criação), limite disponível, registro de compras por categoria, fatura do mês com vencimento e pagamento da fatura com PIN de transação. É demonstrativo: não há integração com bandeira ou emissor |
-| **Perfil** | Nome, nível e saída da conta |
+| Área | O que o app faz |
+|------|-----------------|
+| **Conta e acesso** | Cadastro com nome, CPF, celular e e-mail. Login, sessão persistente e logout. Recuperação de senha por código enviado por e-mail. |
+| **Termos e privacidade** | Aceite obrigatório no cadastro, com versão e data registradas. Textos acessíveis pela Central de ajuda. |
+| **PIN de transação** | PIN de 6 números, criado no primeiro uso. Exigido em Pix, cobrança, transferência, boleto e pagamento de fatura. Bloqueio de 15 minutos após 5 erros. |
+| **Pix** | Envio por chave (e-mail, CPF, celular ou chave aleatória), leitura de QR Code com a câmera e copia e cola no padrão BR Code (com CRC16). |
+| **Cobrança Pix** | Receber com valor e validade de 30 minutos. Quem paga vê o nome do recebedor antes de confirmar. Cada cobrança é paga uma única vez. |
+| **Caixinhas** | Metas, aportes e resgates. O saldo de cada caixinha é calculado pelo livro-razão. |
+| **Boletos** | Emitir um boleto para receber e pagar um boleto pelo código de 47 números. |
+| **Saques** | Transferência simulada para outro banco, com limite diário de R$ 5.000,00. |
+| **Cartão de débito** | Visual que muda com o nível. Número, validade e CVV ficam ocultos até o usuário pedir. |
+| **Cartão de crédito** | Limite de R$ 3.000,00, fatura mensal com vencimento no dia 10, compras e cartão virtual (o CVV é mostrado uma única vez). |
+| **Extrato** | Filtros por tipo (entradas e saídas) e por período. Gráfico de saídas por categoria. Detalhe de cada movimentação, com categorização das saídas. |
+| **Gamificação** | Pontos por aporte, bônus de constância mensal e níveis Bronze, Prata, Ouro e Diamante. |
 
----
+## Regras de negócio
 
-## Sistema de níveis
-
-Definido em `models/user_tier.dart` (`enum UserTier` + extension com as regras de negócio).
-
-| Nível | Rendimento |
-|-------|------------|
-| Bronze | 100% do CDI |
-| Prata | 115% do CDI |
-| Ouro | 130% do CDI |
-| Diamante | 140% do CDI |
-
-- A evolução é medida em **pontos de constância** (`UserProvider.consistencyPoints`),
-  acumulados a cada aporte (`UserProvider.registerDeposit`). Um aporte vale pontos fixos
-  mais uma fração do valor, para premiar o hábito e não só o volume.
-- Ao passar do limite, o excedente de pontos é aproveitado no nível seguinte.
-- O cartão digital é sincronizado com o nível via `CardProvider.syncTier`,
-  então a "skin" muda sozinha quando o usuário sobe de nível.
-
----
-
-## Como rodar
-
-**Pré-requisitos:** Flutter com Dart `>=3.3.0` (Flutter 3.19 ou superior).
-
-```bash
-git clone https://github.com/CauaBorges438/S3Bank.git
-cd S3_Bank_flutter
-flutter pub get
-flutter run
-```
-
-Para rodar no navegador:
-
-```bash
-flutter run -d chrome
-```
-
-> **Para entrar no app:** crie sua conta em **"Abra sua conta"**. Se o projeto Supabase exigir confirmação
-> de e-mail, clique no link recebido e depois entre com e-mail e senha (se o e-mail não chegar, a tela de
-> login tem o botão **"Reenviar e-mail de confirmação"**). A sessão é guardada pelo Supabase, então ao
-> reabrir o app você continua logado. É preciso ter internet.
-
----
+| Regra | Valor |
+|-------|-------|
+| Pontos por aporte em caixinha | `15 + valor em reais / 10` |
+| Bônus de constância | +10% por mês seguido de aportes, até +50% |
+| Quebra de constância | Zera o bônus. Os pontos acumulados e o nível não são perdidos |
+| Níveis (pontos para subir) | Bronze → Prata: 300 · Prata → Ouro: 700 · Ouro → Diamante: 1.500 |
+| Limite diário de saídas | R$ 5.000,00 (transferências para outro banco e boletos pagos) |
+| Limite do cartão de crédito | R$ 3.000,00 |
+| Vencimento da fatura | Dia 10 do mês seguinte |
+| Validade da cobrança Pix | 30 minutos |
+| Validade do boleto | 3 dias |
+| Validade da autorização de PIN | 2 minutos, uso único |
 
 ## Arquitetura
 
-Organização por **telas + providers + camada de serviços** que conversa com o Supabase.
-Gerenciador de estado: [`provider`](https://pub.dev/packages/provider) (`ChangeNotifier`).
-
-```text
-lib/
-├── core/
-│   ├── theme/                    # AppColors e ThemeData (Material 3, dark)
-│   └── pix_payload_generator.dart # BR Code do Pix (EMV + CRC16)
-├── models/                       # UserTier, Transaction, SavingsGoal, CardModel, CardSummary
-├── services/                     # Supabase: config, BankService (tabelas e funções do banco),
-│                                 # BankActions e AccountDataCoordinator (carrega/limpa os
-│                                 # providers ao entrar/sair da conta)
-├── providers/                    # Auth, User, Wallet, Savings, PixKeys, Card, CreditCard
-├── widgets/                      # cartão, saldo, badges, botão com gradiente,
-│                                 # fundo e campos das telas de acesso...
-├── screens/
-│   ├── auth/                     # login, cadastro, esqueci minha senha
-│   ├── dashboard/                # início
-│   ├── pix/                      # área Pix
-│   ├── savings/                  # guardar dinheiro
-│   ├── card/                     # cartão digital e cartão de crédito
-│   ├── profile/                  # perfil
-│   ├── auth_gate.dart            # alterna login ↔ app conforme a sessão
-│   ├── splash_screen.dart
-│   └── main_navigation_screen.dart # navegação inferior entre as abas
-└── main.dart                     # MultiProvider + MaterialApp
-test/                             # testes automatizados
+```
+┌──────────────────────┐        ┌─────────────────────────────────────┐        ┌──────────┐
+│  App Flutter         │  HTTPS │  Supabase                           │  API   │  Resend  │
+│  Provider (estado)   │ ─────► │  Auth · Postgres (RLS) · Functions  │ ─────► │ (e-mail) │
+│  Armazenamento seguro│        │                                     │        └──────────┘
+└──────────────────────┘        └─────────────────────────────────────┘
 ```
 
----
+**Princípios adotados**
+
+- **Livro-razão imutável.** O app não edita saldos. Toda movimentação é um lançamento, e o
+  saldo é a soma dos lançamentos.
+- **Regras no banco.** Operações financeiras são funções SQL (`SECURITY DEFINER`) que validam
+  saldo, limites, expiração e autorização de PIN dentro de uma única transação.
+- **Isolamento por usuário.** Row Level Security em todas as tabelas. Um usuário nunca lê nem
+  altera dados de outro.
+- **Segredos fora do cliente.** Hashes de senha e PIN, chaves de API de e-mail e o CVV do cartão
+  nunca ficam no aplicativo.
+
+### Estrutura do código
+
+```
+lib/
+├── core/            # Regras puras: formatação, validadores, níveis, PIX (BR Code), termos
+├── models/          # Modelos de transação, nível e resumo do cartão
+├── providers/       # Estado da aplicação (Provider)
+├── services/        # Acesso ao Supabase (LedgerRepository) e coordenação de dados por conta
+├── screens/         # Telas, agrupadas por funcionalidade
+├── widgets/         # Componentes reutilizáveis (cartões, estados de tela, aviso de PIN)
+└── main.dart        # Inicialização do Supabase, providers e bloqueio por biometria
+supabase/
+├── migrations/      # Schema, regras e funções, em ordem numérica
+└── functions/       # Edge Functions de recuperação de senha (envio e confirmação do código)
+test/                # Testes unitários e de integração contra o Supabase
+```
+
+## Tecnologias
+
+- **Flutter** e **Dart**, com Material 3 em tema escuro
+- **Provider** para gerenciamento de estado
+- **Supabase**: autenticação, Postgres com RLS e Edge Functions em Deno
+- **Resend**: envio de e-mails transacionais
+- **mobile_scanner** (leitura de QR Code), **local_auth** (biometria) e **flutter_secure_storage**
+  (armazenamento seguro da sessão)
+
+## Segurança
+
+- Senhas de acesso são gerenciadas pelo Supabase Auth. O PIN de transação e os códigos de
+  recuperação são guardados apenas como hash com sal.
+- O PIN é conferido no banco. Após 5 erros, fica bloqueado por 15 minutos.
+- Cada autorização de PIN vale uma vez e por 2 minutos. Se a operação falhar, a autorização
+  não é consumida.
+- O CVV do cartão virtual é guardado apenas como hash e exibido uma única vez.
+- Os códigos de recuperação de senha expiram em 10 minutos e aceitam até 5 tentativas.
+- A sessão de acesso fica no armazenamento seguro do aparelho, e o bloqueio por biometria é
+  aplicado ao abrir o app em aparelhos que a suportam.
+
+## Como rodar
+
+### Pré-requisitos
+
+- Flutter `>= 3.35` (Dart `>= 3.9`)
+- Node.js (para a CLI do Supabase)
+- Uma conta no [Supabase](https://supabase.com) e uma no [Resend](https://resend.com)
+
+### 1. Clonar e instalar dependências
+
+```bash
+git clone https://github.com/camposdevs/S3_Bank_flutter.git
+cd S3_Bank_flutter
+flutter pub get
+```
+
+### 2. Configurar o Supabase
+
+1. Crie um projeto no Supabase.
+2. No **SQL Editor**, execute os arquivos de `supabase/migrations/` **em ordem numérica**, do
+   `0001` ao `0015`. Cada um deve terminar com "Success".
+3. Em **Authentication > Providers > Email**, desative a confirmação por e-mail para testes.
+4. Em **Authentication > Email Templates**, confira que o modelo de recuperação de senha contém
+   `{{ .Token }}`.
+
+### 3. Publicar as Edge Functions
+
+```bash
+npx supabase login
+npx supabase link --project-ref SEU_PROJECT_REF
+npx supabase secrets set RESEND_API_KEY=re_sua_chave
+npx supabase secrets set RESEND_FROM="S3 Bank <nao-responda@seudominio.com>"
+npx supabase functions deploy send-reset-code --no-verify-jwt
+npx supabase functions deploy verify-reset-code --no-verify-jwt
+```
+
+O envio de e-mail só entrega para o próprio e-mail da conta do Resend enquanto não houver
+um domínio verificado.
+
+### 4. Apontar o app para o seu projeto
+
+Edite `lib/core/config/supabase_config.dart` com a URL do projeto e a chave pública
+(`publishable` ou `anon`), disponíveis em **Project Settings > API Keys**. A chave pública
+pode ficar no aplicativo. A segurança depende das regras de RLS, e não de esconder essa chave.
+
+### 5. Executar
+
+```bash
+flutter run                 # Android (emulador ou aparelho)
+flutter run -d chrome       # navegador
+```
+
+No navegador, a biometria é desligada automaticamente.
 
 ## Testes
 
 ```bash
-flutter test
+flutter analyze
+flutter test                # unitários: regras, validadores, formatação e providers
 ```
 
-Os testes cobrem as regras que não podem quebrar sem ninguém perceber:
-
-| Arquivo | O que garante |
-|---------|---------------|
-| `user_tier_test.dart` | Percentuais do CDI, ordem dos níveis, pontos de constância, subida de nível (inclusive vários de uma vez) |
-| `pix_payload_generator_test.dart` | Estrutura do BR Code, tamanhos dos campos, CRC16 conferido por uma implementação independente, limpeza de acentos |
-| `wallet_provider_test.dart` | Envio e recebimento de Pix, saldo insuficiente, valores inválidos, arredondamento de centavos |
-| `savings_and_pix_keys_test.dart` | Rendimento por nível, caixinhas, validação de CPF/e-mail/celular/chave aleatória |
-| `currency_input_formatter_test.dart` | Máscara de valores em reais nos campos de dinheiro |
-| `card_format_test.dart` | Número do cartão mascarado, nome dos meses da fatura, leitura do resumo (limite, uso, vencimento) e compra paga |
-
-Login, cadastro e as funções do banco dependem do servidor e são verificados manualmente no app.
-
-A cada push, o GitHub Actions roda `flutter analyze` e `flutter test`
-(`.github/workflows/flutter.yml`).
-
----
-
-## Conectando ao Supabase
-
-O app usa o projeto Supabase "S3 Bank", que já tem as tabelas `perfis`, `carteiras`, `transacoes`, `caixinhas`, `cartoes`, `chaves_pix`, `regras_nivel` e `taxas_cdi`, com RLS ligada (cada usuário lê só os próprios dados).
-
-- **Autenticação:** Supabase Auth (e-mail + senha). No cadastro, o trigger `handle_new_user` cria perfil, carteira (bônus de R$ 1.000), cartão e a primeira transação. O nome vai em `raw_user_meta_data.nome`.
-- **Leitura:** o app lê as tabelas direto.
-- **Movimentação de dinheiro:** só pelas funções do banco `enviar_pix`, `receber_pix`, `depositar_caixinha` e `resgatar_caixinha`. Elas validam o saldo e atualizam carteira, extrato, pontos e nível numa única transação.
-- **Caixinhas e chaves Pix:** `insert` direto (e `delete` nas chaves), liberado pelas políticas.
-- **Cartão de crédito:** pelas funções `create_virtual_card`, `get_card_summary`, `make_card_purchase` e `pay_card_invoice_pin` (o pagamento da fatura exige a autorização do PIN de transação). As compras ficam na tabela `card_purchases`.
-
-Para o código de recuperação de senha chegar por e-mail, o template **Authentication → Email Templates → Reset Password** precisa conter `{{ .Token }}`. O cadastro usa confirmação de e-mail; para entrar logo após criar a conta (útil em testes), desligue "Confirm email" em Authentication → Sign In / Providers → Email.
-
-Ao testar com `flutter run`, use *hot restart* (`R`) e não *hot reload* (`r`) depois de mexer em autenticação: o reload não recria a sessão criada em `main()`.
-
-A URL e a chave pública (`anon`) do projeto já estão em `lib/services/supabase_config.dart`, então basta:
+Os testes de integração rodam contra um projeto Supabase real. Eles criam contas de teste a
+cada execução, por isso são pulados quando as credenciais não são informadas:
 
 ```bash
-flutter pub get
-flutter run
+flutter test test/integration \
+  --dart-define=SUPABASE_URL=https://SEU_PROJECT_REF.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=SUA_CHAVE_PUBLICA
 ```
 
-Para apontar para outro projeto, use `--dart-define=SUPABASE_URL=...` e `--dart-define=SUPABASE_ANON_KEY=...`. Nunca coloque a chave `service_role` no app.
+Os testes de integração cobrem as regras do banco: isolamento entre usuários, saldo, Pix,
+caixinhas, boletos, cartão de crédito, limites, PIN e cobranças.
 
-## Como cada provider usa o backend
+## Integração contínua
 
-Os providers em `lib/providers/` guardam o estado da tela; quem fala com o Supabase é `lib/services/`.
-Ao entrar numa conta, o `AccountDataCoordinator` busca tudo no servidor e entrega aos providers; depois de cada operação, busca de novo.
+O workflow `.github/workflows/flutter.yml` roda `flutter analyze` e `flutter test` a cada push e
+pull request na `main`.
 
-| Onde | Como funciona |
-|------|---------------|
-| `AuthProvider` | Supabase Auth (login, cadastro, reenvio de confirmação, recuperação de senha por código) |
-| `UserProvider` | Nome, nível e pontos de constância vêm de `perfis`; a subida de nível é calculada no banco (`regras_nivel`) |
-| `WalletProvider` | Saldo (`carteiras`) e extrato (`transacoes`); Pix por `enviar_pix` / `receber_pix` |
-| `SavingsProvider` | Caixinhas (`caixinhas`); aporte e resgate por `depositar_caixinha` / `resgatar_caixinha` |
-| `PixKeysProvider` | Chaves Pix (`chaves_pix`) |
-| `CardProvider` | Dados do cartão (`cartoes`), criado no cadastro pelo trigger `handle_new_user` |
-| `CreditCardProvider` | Limite, fatura e compras do cartão de crédito (`get_card_summary`, `card_purchases`); criação, compra e pagamento por funções do banco. Vive só enquanto a tela de cartões está aberta |
-| `PixPayloadGenerator` | QR Code estático; cobranças dinâmicas exigem um PSP autorizado pelo Banco Central |
+## Migrações do banco
 
-> **Aviso sobre o Pix:** o QR Code gerado é estático e estruturalmente válido.
-> Se a chave informada existir de verdade, qualquer banco consegue pagar nela.
-> Em demonstrações, use sempre uma chave fictícia.
+| Arquivo | Conteúdo |
+|---------|----------|
+| `0001_schema` | Perfis, contas, chaves Pix, livro-razão e RLS |
+| `0002_savings_and_pix_server` | Transferências Pix e caixinhas no banco |
+| `0003_register_pix_key` | Cadastro de chave Pix por função |
+| `0004_gamification_server` | Pontos de constância e níveis calculados no servidor |
+| `0005_pix_charges` | Cobranças Pix com validade |
+| `0006_charge_txid_25` | Identificador de cobrança compatível com o BR Code |
+| `0007_statement_categories` | Categorias das saídas |
+| `0008_boletos_and_limits` | Boletos e limite diário de saídas |
+| `0009_credit_card` | Cartão de crédito, compras e fatura |
+| `0010_password_reset_codes` | Códigos de recuperação de senha |
+| `0011_transaction_pin` | PIN de transação com bloqueio |
+| `0012_pin_authorization` | Autorização de uso único para operações com PIN |
+| `0013_require_pin` | Bloqueio das operações sem PIN para usuários comuns |
+| `0014_pin_wrapper_defaults` | Parâmetros opcionais nas operações com PIN |
+| `0015_terms_acceptance` | Registro da versão e da data do aceite dos termos |
 
----
+## Limitações conhecidas
 
-## Roadmap
+- **Não é um banco real.** Não há autorização do Banco Central, não há integração com o Pix
+  oficial e não há transferências reais entre instituições.
+- **Sem auditoria de segurança independente.** Um sistema financeiro real passa por revisão
+  especializada antes de guardar dinheiro de terceiros.
+- **Testes de interface limitados.** As regras de negócio são cobertas por testes automatizados,
+  mas o fluxo visual precisa de testes manuais em aparelho.
+- **Sem exclusão de conta pelo app.** Pedidos de exclusão são feitos pelo canal de atendimento.
 
-- [x] Login, cadastro (com confirmação de e-mail) e recuperação de senha via Supabase Auth
-- [x] Dados por conta no Supabase, com RLS
-- [x] Níveis, pontos de constância e cartão que acompanha o nível
-- [x] Pix com QR Code e Copia e Cola
-- [x] Camada de serviços entre providers e backend (`BankService`, `AccountDataCoordinator`)
-- [x] Movimentação de dinheiro por funções do banco (saldo validado no servidor)
-- [ ] Dados do cartão protegidos (hoje número e CVV ficam em texto no banco; discutir no TCC)
-- [x] Cartão de crédito virtual com limite, compras, fatura e pagamento com PIN
-- [x] Testes automatizados e CI no GitHub Actions
-- [ ] Telas de Dados pessoais, Segurança e Ajuda no perfil
+## Documentação legal
 
-<!--
-Quando tiver prints do app, adicione aqui uma seção "Telas" com uma tabela de imagens:
-| Login | Início | Pix | Cartão |
-|:-:|:-:|:-:|:-:|
-| <img src="docs/login.png" width="200"> | ... |
--->
+Os termos de uso e a política de privacidade estão no próprio aplicativo (Central de ajuda) e
+seguem a Lei Geral de Proteção de Dados (Lei 13.709/2018). O texto é um modelo acadêmico e deve
+ser revisado por um profissional jurídico antes de qualquer uso real.
 
----
+## Autor
 
-## Integrantes
-
-- Denise Gonçalves
-- Cauã Borges
-- Pedro Campo
-
-## Turma
-- 4DS
+Desenvolvido por **camposdevs** como Trabalho de Conclusão de Curso.

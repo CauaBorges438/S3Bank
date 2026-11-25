@@ -60,7 +60,7 @@ class PixPayloadParser {
     final amountText = top['54'];
     if (amountText != null) {
       amount = double.tryParse(amountText);
-      if (amount == null || amount <= 0) {
+      if (amount == null || !amount.isFinite || amount <= 0) {
         throw const FormatException('Valor inválido');
       }
     }
@@ -85,7 +85,7 @@ class PixPayloadParser {
     while (i + 4 <= data.length) {
       final id = data.substring(i, i + 2);
       final len = int.tryParse(data.substring(i + 2, i + 4));
-      if (len == null || i + 4 + len > data.length) {
+      if (len == null || len < 0 || i + 4 + len > data.length) {
         throw const FormatException('Campo TLV inválido');
       }
       out[id] = data.substring(i + 4, i + 4 + len);

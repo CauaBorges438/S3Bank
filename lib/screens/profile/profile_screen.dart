@@ -8,7 +8,6 @@ import '../../widgets/tier_badge.dart';
 import 'help_center_screen.dart';
 import 'notifications_screen.dart';
 import 'personal_data_screen.dart';
-import 'security_screen.dart';
 
 /// Tela de perfil do usuário: dados da conta, nível atual e opções
 /// gerais do app. Hoje tudo estático além do nome/nível (que vêm dos
@@ -90,13 +89,6 @@ class ProfileScreen extends StatelessWidget {
               label: 'Dados pessoais',
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const PersonalDataScreen()),
-              ),
-            ),
-            _ProfileTile(
-              icon: Icons.shield_outlined,
-              label: 'Segurança',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SecurityScreen()),
               ),
             ),
             _ProfileTile(

@@ -1,4 +1,7 @@
-/// Resumo do cartão de crédito: limite, uso e fatura do mês.
+/// Vencimento da fatura de [month]: dia 10 do mês seguinte (mesma regra do banco).
+DateTime invoiceDueFor(DateTime month) => DateTime(month.year, month.month + 1, 10);
+
+/// Resumo do cartão de crédito: limite, uso, fatura do mês e fatura em atraso.
 class CardSummary {
   final bool hasCard;
   final String? last4;
@@ -9,6 +12,8 @@ class CardSummary {
   final DateTime invoiceMonth;
   final int invoiceTotalCents;
   final DateTime invoiceDue;
+  final DateTime? overdueMonth;
+  final int overdueCents;
 
   const CardSummary({
     required this.hasCard,
@@ -20,7 +25,11 @@ class CardSummary {
     required this.invoiceMonth,
     required this.invoiceTotalCents,
     required this.invoiceDue,
+    this.overdueMonth,
+    this.overdueCents = 0,
   });
+
+  bool get hasOverdue => overdueMonth != null && overdueCents > 0;
 
   factory CardSummary.fromRow(Map<String, dynamic> row) => CardSummary(
         hasCard: row['has_card'] as bool? ?? false,
@@ -32,6 +41,10 @@ class CardSummary {
         invoiceMonth: DateTime.parse(row['invoice_month'] as String),
         invoiceTotalCents: (row['invoice_total_cents'] as num).toInt(),
         invoiceDue: DateTime.parse(row['invoice_due'] as String),
+        overdueMonth: row['overdue_month'] == null
+            ? null
+            : DateTime.parse(row['overdue_month'] as String),
+        overdueCents: (row['overdue_cents'] as num?)?.toInt() ?? 0,
       );
 }
 

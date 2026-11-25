@@ -58,19 +58,26 @@ class CreditCardProvider extends ChangeNotifier {
       return null;
     } on LedgerException catch (e) {
       return e.message;
+    } catch (_) {
+      return 'Não foi possível registrar a compra. Tente de novo.';
     }
   }
 
-  /// Paga a fatura do mês atual. Retorna null em sucesso ou o erro.
-  Future<String?> payInvoice(String auth) async {
-    final s = _summary;
-    if (s == null || s.invoiceTotalCents == 0) return 'Não há nada a pagar nesta fatura.';
+  /// Paga uma fatura (mês atual ou em atraso). Retorna null em sucesso ou o erro.
+  Future<String?> payInvoice(
+    String auth, {
+    required DateTime month,
+    required int totalCents,
+  }) async {
+    if (totalCents <= 0) return 'Não há nada a pagar nesta fatura.';
     try {
-      await _ledger.payCardInvoice(s.invoiceMonth, auth);
+      await _ledger.payCardInvoice(month, auth);
       await refresh();
       return null;
     } on LedgerException catch (e) {
       return e.message;
+    } catch (_) {
+      return 'Não foi possível pagar a fatura. Tente de novo.';
     }
   }
 

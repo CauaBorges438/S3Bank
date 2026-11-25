@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/legal/legal_documents.dart';
+import '../legal/legal_screen.dart';
+
 import '../../core/theme/app_colors.dart';
 
 /// Central de ajuda: perguntas frequentes e canal de atendimento.
@@ -65,6 +68,40 @@ class HelpCenterScreen extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 20),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.gavel_outlined),
+                title: const Text('Termos de uso'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const LegalScreen(
+                      title: 'Termos de uso',
+                      sections: LegalDocuments.terms,
+                      version: LegalDocuments.termsVersion,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
+                title: const Text('Política de privacidade'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const LegalScreen(
+                      title: 'Política de privacidade',
+                      sections: LegalDocuments.privacy,
+                      version: LegalDocuments.privacyVersion,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.mail_outline),

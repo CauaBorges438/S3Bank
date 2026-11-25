@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../widgets/pin_gate.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/card_format.dart';
@@ -11,10 +10,10 @@ import '../../providers/credit_card_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/ledger_repository.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/pin_gate.dart';
 import '../../widgets/state_view.dart';
 
-/// Seção de crédito dentro de "Meus cartões". Usa o CreditCardProvider
-/// que a tela de cartões já fornece na árvore.
+/// Seção de crédito dentro de "Meus cartões".
 class CreditCardSection extends StatelessWidget {
   /// false = dados ocultos (padrão, como nos bancos).
   final bool revealed;
@@ -38,6 +37,10 @@ class CreditCardSection extends StatelessWidget {
         const SizedBox(height: 14),
         _LimitCard(summary: s, revealed: revealed),
         const SizedBox(height: 14),
+        if (s.hasOverdue) ...[
+          _OverdueCard(summary: s, revealed: revealed),
+          const SizedBox(height: 14),
+        ],
         _InvoiceCard(summary: s, revealed: revealed),
         const SizedBox(height: 26),
         _PurchasesSection(purchases: cc.purchases, canBuy: s.hasCard, revealed: revealed),
@@ -52,10 +55,42 @@ String _money(double value, bool revealed) => revealed ? brl(value) : 'R\$ •�
 String _dateBr(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-/// "1.500,00" ou "1500" -> 1500.0. Null se não for um valor positivo.
-double? _parseMoney(String text) {
-  final v = double.tryParse(text.trim().replaceAll('.', '').replaceAll(',', '.'));
-  return (v == null || v <= 0) ? null : v;
+/// Pede confirmação e PIN, paga a fatura e atualiza o saldo.
+Future<void> _payInvoice(
+  BuildContext context, {
+  required DateTime month,
+  required int cents,
+  required String description,
+}) async {
+  final cc = context.read<CreditCardProvider>();
+  final wallet = context.read<WalletProvider>();
+  final messenger = ScaffoldMessenger.of(context);
+
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Pagar fatura'),
+      content: Text('Pagar ${brl(cents / 100)} $description agora? O valor sai da sua conta.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('Pagar'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+
+  final auth = await obtainPinAuth(context);
+  if (auth == null || !context.mounted) return;
+
+  final error = await cc.payInvoice(auth, month: month, totalCents: cents);
+  if (error == null) await wallet.refreshFromServer();
+  messenger.showSnackBar(SnackBar(content: Text(error ?? 'Fatura paga com sucesso.')));
 }
 
 class _Panel extends StatelessWidget {
@@ -90,11 +125,75 @@ class _LimitCard extends StatelessWidget {
             style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 12),
-          LinearProgressIndicator(value: ratio, minHeight: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 8,
+              color: AppColors.accentLight,
+              backgroundColor: AppColors.surfaceElevated,
+            ),
+          ),
           const SizedBox(height: 6),
           Text(
             'Usado ${_money(summary.usedCents / 100, revealed)} de ${_money(summary.limitCents / 100, revealed)}',
             style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OverdueCard extends StatelessWidget {
+  final CardSummary summary;
+  final bool revealed;
+
+  const _OverdueCard({required this.summary, required this.revealed});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = summary.overdueMonth;
+    if (m == null) return const SizedBox.shrink();
+    return _Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.danger),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Fatura em atraso · ${monthNamePt(m.month)}/${m.year}',
+                  style: const TextStyle(
+                    color: AppColors.danger,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _money(summary.overdueCents / 100, revealed),
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Venceu em ${_dateBr(invoiceDueFor(m))}',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => _payInvoice(
+              context,
+              month: m,
+              cents: summary.overdueCents,
+              description: 'da fatura em atraso',
+            ),
+            child: const Text('Pagar fatura em atraso'),
           ),
         ],
       ),
@@ -107,39 +206,6 @@ class _InvoiceCard extends StatelessWidget {
   final bool revealed;
 
   const _InvoiceCard({required this.summary, required this.revealed});
-
-  Future<void> _pay(BuildContext context) async {
-    final cc = context.read<CreditCardProvider>();
-    final wallet = context.read<WalletProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    final total = summary.invoiceTotalCents / 100;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Pagar fatura'),
-        content: Text('Pagar ${brl(total)} agora? O valor sai da sua conta.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Pagar'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-
-    if (!context.mounted) return;
-    final auth = await obtainPinAuth(context);
-    if (auth == null) return;
-    final error = await cc.payInvoice(auth);
-    if (error == null) await wallet.refreshFromServer();
-    messenger.showSnackBar(SnackBar(content: Text(error ?? 'Fatura paga com sucesso.')));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +232,12 @@ class _InvoiceCard extends StatelessWidget {
           const SizedBox(height: 14),
           if (open)
             FilledButton(
-              onPressed: () => _pay(context),
+              onPressed: () => _payInvoice(
+                context,
+                month: m,
+                cents: summary.invoiceTotalCents,
+                description: 'da fatura',
+              ),
               child: const Text('Pagar fatura'),
             )
           else
@@ -182,16 +253,9 @@ class _InvoiceCard extends StatelessWidget {
 
 class _CreditVisual extends StatelessWidget {
   final CardSummary summary;
-
   final bool revealed;
 
   const _CreditVisual({required this.summary, required this.revealed});
-
-  static const _gradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF14142B), Color(0xFF3B2A7A), Color(0xFF6A4CE0)],
-  );
 
   static String _grouped(String number) => [
         for (var i = 0; i < number.length; i += 4)
@@ -237,24 +301,38 @@ class _CreditVisual extends StatelessWidget {
       );
     } on LedgerException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Não foi possível criar o cartão. Tente de novo.')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final has = summary.hasCard;
-    return AspectRatio(
-      aspectRatio: 1.7,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: has ? _gradient : null,
-          color: has ? null : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: has ? null : Border.all(color: AppColors.border),
+    return Container(
+      height: 200,
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: has ? AppColors.accentGradient : null,
+        color: has ? null : AppColors.surface,
+        border: Border.all(
+          color: has ? Colors.white.withValues(alpha: 0.08) : AppColors.border,
         ),
-        child: has ? _filled() : _empty(context),
+        boxShadow: has
+            ? [
+                BoxShadow(
+                  color: AppColors.accent.withValues(alpha: 0.4),
+                  blurRadius: 28,
+                  offset: const Offset(0, 14),
+                ),
+              ]
+            : null,
       ),
+      child: has ? _filled() : _empty(context),
     );
   }
 
@@ -265,26 +343,46 @@ class _CreditVisual extends StatelessWidget {
             children: [
               const Text(
                 'S3 BANK',
-                style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.5),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                  letterSpacing: 0.5,
+                ),
               ),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white12,
+                  color: Colors.white24,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: const Text(
                   'Crédito',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 18),
+          const _CardChip(),
           const Spacer(),
-          Text(
-            maskedCard(summary.last4),
-            style: const TextStyle(fontSize: 17, letterSpacing: 2, fontWeight: FontWeight.w500),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              maskedCard(summary.last4),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                letterSpacing: 2,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           Row(
@@ -297,7 +395,10 @@ class _CreditVisual extends StatelessWidget {
                         style: TextStyle(color: Colors.white70, fontSize: 11)),
                     Text(
                       _money(summary.availableCents / 100, revealed),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -305,10 +406,14 @@ class _CreditVisual extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text('Validade', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                  const Text('Validade',
+                      style: TextStyle(color: Colors.white70, fontSize: 11)),
                   Text(
                     revealed ? (summary.expiry ?? '--/--') : '••/••',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -336,10 +441,33 @@ class _CreditVisual extends StatelessWidget {
       );
 }
 
+class _CardChip extends StatelessWidget {
+  const _CardChip();
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Container(
+            width: 38,
+            height: 28,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.chipSilver, AppColors.chipSilverDark],
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Icon(Icons.wifi, color: Colors.white.withValues(alpha: 0.9), size: 20),
+        ],
+      );
+}
+
 class _PurchasesSection extends StatelessWidget {
   final List<CardPurchase> purchases;
   final bool canBuy;
-
   final bool revealed;
 
   const _PurchasesSection({
@@ -360,29 +488,32 @@ class _PurchasesSection extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialog) => AlertDialog(
           title: const Text('Nova compra'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: merchantCtrl,
-                decoration: const InputDecoration(labelText: 'Onde foi a compra'),
-              ),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Valor (R\$)'),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: category,
-                decoration: const InputDecoration(labelText: 'Categoria'),
-                items: [
-                  for (final e in kTxCategories.entries)
-                    DropdownMenuItem(value: e.key, child: Text(e.value)),
-                ],
-                onChanged: (v) => setDialog(() => category = v ?? category),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: merchantCtrl,
+                  maxLength: 60,
+                  decoration: const InputDecoration(labelText: 'Onde foi a compra'),
+                ),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Valor (R\$)'),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: category,
+                  decoration: const InputDecoration(labelText: 'Categoria'),
+                  items: [
+                    for (final e in kTxCategories.entries)
+                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) => setDialog(() => category = v ?? category),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -397,15 +528,25 @@ class _PurchasesSection extends StatelessWidget {
         ),
       ),
     );
+
+    final merchant = merchantCtrl.text.trim();
+    final amountText = amountCtrl.text;
+    merchantCtrl.dispose();
+    amountCtrl.dispose();
     if (ok != true) return;
 
-    final amount = _parseMoney(amountCtrl.text);
+    if (merchant.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('Informe onde foi a compra.')));
+      return;
+    }
+    final amount = parseBrMoney(amountText);
     if (amount == null) {
       messenger.showSnackBar(const SnackBar(content: Text('Informe um valor válido.')));
       return;
     }
+
     final error = await cc.purchase(
-      merchant: merchantCtrl.text,
+      merchant: merchant,
       amountCents: (amount * 100).round(),
       category: category,
     );
@@ -476,8 +617,12 @@ class _PurchaseTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(purchase.merchant,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  purchase.merchant,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   '$category · ${_dateBr(d)}',
@@ -486,11 +631,14 @@ class _PurchaseTile extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(_money(purchase.amountCents / 100, revealed),
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(
+                _money(purchase.amountCents / 100, revealed),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 2),
               Text(
                 purchase.paid ? 'Paga' : 'Na fatura',

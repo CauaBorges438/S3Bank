@@ -397,6 +397,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             inputFormatters: AuthProvider.passwordFormatters,
             icon: Icons.lock_outline,
             obscureText: _obscurePassword,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                color: AppColors.textSecondary,
+              ),
+              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            ),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) {
               if (!_loading) _resetPassword();

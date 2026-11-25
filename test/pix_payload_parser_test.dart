@@ -67,4 +67,35 @@ void main() {
     );
     expect(PixPayloadParser.tryParse(qr)!.txid, isNull);
   });
+
+  // --- regressões da auditoria (BUG-001 e BUG-002) ---
+
+  String crcHex(String s) {
+    var crc = 0xFFFF;
+    for (final b in s.codeUnits) {
+      crc ^= (b << 8);
+      for (var i = 0; i < 8; i++) {
+        crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+      }
+    }
+    return crc.toRadixString(16).toUpperCase().padLeft(4, '0');
+  }
+
+  String comCrc(String corpo) {
+    final semCrc = '${corpo}6304';
+    return semCrc + crcHex(semCrc);
+  }
+
+  test('BUG-001: tamanho negativo de campo é recusado, sem estourar exceção', () {
+    final payload = comCrc('000201' '26-1' 'xxxxxxxxxx');
+    expect(() => PixPayloadParser.tryParse(payload), returnsNormally);
+    expect(PixPayloadParser.tryParse(payload), isNull);
+  });
+
+  test('BUG-002: valor NaN é recusado', () {
+    final payload = comCrc(
+      '000201' '2633' '0014BR.GOV.BCB.PIX' '0111maria@a.com' '5403NaN',
+    );
+    expect(PixPayloadParser.tryParse(payload), isNull);
+  });
 }
